@@ -2,12 +2,12 @@
 
 ## Overview
 
-Phase 4 focused on integrating the Tantivy full-text search engine into the Master Patient Index system. This phase implemented a complete search infrastructure for fast, accurate patient lookups with support for fuzzy matching, multi-field queries, and efficient indexing.
+Phase 4 focused on integrating the Tantivy full-text search engine into the Master Worker Index system. This phase implemented a complete search infrastructure for fast, accurate worker lookups with support for fuzzy matching, multi-field queries, and efficient indexing.
 
 ## Objectives Completed
 
 1. ✅ Set up Tantivy search index structure with comprehensive schema
-2. ✅ Implement patient data indexing (single and bulk operations)
+2. ✅ Implement worker data indexing (single and bulk operations)
 3. ✅ Create search query builders with multi-field support
 4. ✅ Implement fuzzy search capabilities with edit distance matching
 5. ✅ Add search result ranking based on relevance scores
@@ -18,12 +18,12 @@ Phase 4 focused on integrating the Tantivy full-text search engine into the Mast
 
 ### 1. Search Index Schema (`src/search/index.rs`)
 
-Created a comprehensive Tantivy index schema optimized for patient search:
+Created a comprehensive Tantivy index schema optimized for worker search:
 
 ```rust
-pub struct PatientIndexSchema {
+pub struct WorkerIndexSchema {
     pub schema: Schema,
-    pub id: Field,              // Patient UUID (STRING | STORED)
+    pub id: Field,              // Worker UUID (STRING | STORED)
     pub family_name: Field,     // Last name (TEXT | STORED)
     pub given_names: Field,     // First/middle names (TEXT | STORED)
     pub full_name: Field,       // Combined name (TEXT | STORED)
@@ -32,29 +32,30 @@ pub struct PatientIndexSchema {
     pub postal_code: Field,     // ZIP/postal code (STRING | STORED)
     pub city: Field,            // City (TEXT | STORED)
     pub state: Field,           // State/province (STRING | STORED)
-    pub identifiers: Field,     // Patient identifiers (TEXT | STORED)
+    pub identifiers: Field,     // Worker identifiers (TEXT | STORED)
     pub active: Field,          // Active status (STRING | FAST)
 }
 ```
 
 **Field Type Strategy:**
+
 - **TEXT fields**: Full-text searchable with tokenization (names, city, identifiers)
 - **STRING fields**: Exact match searchable (ID, postal code, gender, state, birth date)
 - **STORED flag**: Allows retrieving field values from documents
 - **FAST flag**: Enables fast filtering on active status
 
-### 2. Index Management (`PatientIndex` struct)
+### 2. Index Management (`WorkerIndex` struct)
 
 Implemented comprehensive index lifecycle management:
 
 ```rust
-pub struct PatientIndex {
+pub struct WorkerIndex {
     index: Index,
-    schema: PatientIndexSchema,
+    schema: WorkerIndexSchema,
     reader: IndexReader,
 }
 
-impl PatientIndex {
+impl WorkerIndex {
     /// Create a new index at the given path
     pub fn create<P: AsRef<Path>>(index_path: P) -> Result<Self>
 
@@ -76,6 +77,7 @@ impl PatientIndex {
 ```
 
 **Key Features:**
+
 - **Automatic Reader Reload**: Uses `ReloadPolicy::OnCommit` for real-time search updates
 - **Flexible Creation**: `create_or_open()` method handles both new and existing indexes
 - **Configurable Writers**: Heap size control for indexing performance
@@ -85,28 +87,28 @@ impl PatientIndex {
 
 Implemented a high-level SearchEngine API with multiple search strategies:
 
-#### a. Single Patient Indexing
+#### a. Single Worker Indexing
 
 ```rust
-pub fn index_patient(&self, patient: &Patient) -> Result<()> {
+pub fn index_worker(&self, worker: &Worker) -> Result<()> {
     let mut writer = self.index.writer(50)?;
     let schema = self.index.schema();
 
     // Build full name
-    let full_name = patient.full_name();
+    let full_name = worker.full_name();
 
     // Collect given names
-    let given_names = patient.name.given.join(" ");
+    let given_names = worker.name.given.join(" ");
 
     // Format identifiers as "TYPE:VALUE"
-    let identifiers: Vec<String> = patient
+    let identifiers: Vec<String> = worker
         .identifiers
         .iter()
         .map(|id| format!("{}:{}", id.identifier_type.to_string(), id.value))
         .collect();
 
     // Extract address components
-    let (postal_code, city, state) = if let Some(addr) = patient.addresses.first() {
+    let (postal_code, city, state) = if let Some(addr) = worker.addresses.first() {
         (
             addr.postal_code.clone().unwrap_or_default(),
             addr.city.clone().unwrap_or_default(),
@@ -117,17 +119,17 @@ pub fn index_patient(&self, patient: &Patient) -> Result<()> {
     };
 
     let doc = doc!(
-        schema.id => patient.id.to_string(),
-        schema.family_name => patient.name.family.clone(),
+        schema.id => worker.id.to_string(),
+        schema.family_name => worker.name.family.clone(),
         schema.given_names => given_names,
         schema.full_name => full_name,
-        schema.birth_date => patient.birth_date.map(|d| d.to_string()).unwrap_or_default(),
-        schema.gender => format!("{:?}", patient.gender).to_lowercase(),
+        schema.birth_date => worker.birth_date.map(|d| d.to_string()).unwrap_or_default(),
+        schema.gender => format!("{:?}", worker.gender).to_lowercase(),
         schema.postal_code => postal_code,
         schema.city => city,
         schema.state => state,
         schema.identifiers => identifiers_str,
-        schema.active => if patient.active { "true" } else { "false" },
+        schema.active => if worker.active { "true" } else { "false" },
     );
 
     writer.add_document(doc)?;
@@ -137,6 +139,7 @@ pub fn index_patient(&self, patient: &Patient) -> Result<()> {
 ```
 
 **Indexing Features:**
+
 - Automatic full name generation from HumanName
 - Space-separated given names for better matching
 - Formatted identifiers with type prefix
@@ -144,14 +147,14 @@ pub fn index_patient(&self, patient: &Patient) -> Result<()> {
 - Gender normalization to lowercase
 - Active status as boolean string
 
-#### b. Bulk Patient Indexing
+#### b. Bulk Worker Indexing
 
 ```rust
-pub fn index_patients(&self, patients: &[Patient]) -> Result<()> {
+pub fn index_workers(&self, workers: &[Worker]) -> Result<()> {
     let mut writer = self.index.writer(100)?;
     let schema = self.index.schema();
 
-    for patient in patients {
+    for worker in workers {
         // ... build document same as single indexing
         writer.add_document(doc)?;
     }
@@ -162,6 +165,7 @@ pub fn index_patients(&self, patients: &[Patient]) -> Result<()> {
 ```
 
 **Performance Optimization:**
+
 - Larger heap size (100 MB) for bulk operations
 - Single commit for all documents (much faster than individual commits)
 - Batch processing reduces I/O overhead
@@ -187,27 +191,28 @@ pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<String>> {
     let query = query_parser.parse_query(query_str)?;
     let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
 
-    // Extract patient IDs from results
-    let mut patient_ids = Vec::new();
+    // Extract worker IDs from results
+    let mut worker_ids = Vec::new();
     for (_score, doc_address) in top_docs {
         let retrieved_doc = searcher.doc(doc_address)?;
         if let Some(id_value) = retrieved_doc.get_first(schema.id) {
             if let Some(id_text) = id_value.as_text() {
-                patient_ids.push(id_text.to_string());
+                worker_ids.push(id_text.to_string());
             }
         }
     }
 
-    Ok(patient_ids)
+    Ok(worker_ids)
 }
 ```
 
 **Search Features:**
+
 - Multi-field query parsing across names and identifiers
 - Tantivy's query syntax support (AND, OR, NOT, phrase queries)
 - Relevance-based ranking (Tantivy's BM25 algorithm)
 - Configurable result limit
-- Returns patient UUIDs for database retrieval
+- Returns worker UUIDs for database retrieval
 
 #### d. Fuzzy Search
 
@@ -222,18 +227,19 @@ pub fn fuzzy_search(&self, query_str: &str, limit: usize) -> Result<Vec<String>>
 
     let top_docs = searcher.search(&fuzzy_query, &TopDocs::with_limit(limit))?;
 
-    // Extract patient IDs...
-    Ok(patient_ids)
+    // Extract worker IDs...
+    Ok(worker_ids)
 }
 ```
 
 **Fuzzy Matching:**
+
 - Levenshtein edit distance of 2 (allows up to 2 character changes)
 - Transposition support (`true` parameter enables it)
 - Focused on family name for common use case
 - Example: "Smith" matches "Smyth", "Smithe", "Smit"
 
-#### e. Blocking Search for Patient Matching
+#### e. Blocking Search for Worker Matching
 
 ```rust
 pub fn search_by_name_and_year(
@@ -271,27 +277,28 @@ pub fn search_by_name_and_year(
 
     let top_docs = searcher.search(final_query.as_ref(), &TopDocs::with_limit(limit))?;
 
-    // Extract patient IDs...
-    Ok(patient_ids)
+    // Extract worker IDs...
+    Ok(worker_ids)
 }
 ```
 
 **Blocking Strategy:**
+
 - Combines fuzzy name matching with birth year filtering
 - `Occur::Must` ensures name matches (fuzzy with edit distance 2)
 - `Occur::Should` boosts scores for matching birth year but doesn't require it
-- Reduces candidate set for patient matching algorithms
+- Reduces candidate set for worker matching algorithms
 - Example: "Smith 1980" finds all fuzzy matches of "Smith" born in 1980
 
 #### f. Index Maintenance
 
 ```rust
-/// Remove a patient from the index
-pub fn delete_patient(&self, patient_id: &str) -> Result<()> {
+/// Remove a worker from the index
+pub fn delete_worker(&self, worker_id: &str) -> Result<()> {
     let mut writer = self.index.writer(50)?;
     let schema = self.index.schema();
 
-    let term = Term::from_field_text(schema.id, patient_id);
+    let term = Term::from_field_text(schema.id, worker_id);
     writer.delete_term(term);
 
     writer.commit()?;
@@ -310,7 +317,8 @@ pub fn optimize(&self) -> Result<()> {
 ```
 
 **Maintenance Features:**
-- Term-based deletion by patient UUID
+
+- Term-based deletion by worker UUID
 - Real-time statistics (document count, segment count)
 - Index optimization via segment merging
 - Improves query performance over time
@@ -327,66 +335,67 @@ Implemented 8 comprehensive tests covering all major functionality:
 
 ### Search Engine Tests (5 tests in `src/search/mod.rs`)
 
-1. **test_index_and_search_patient**:
-   - Indexes a patient ("John Smith")
+1. **test_index_and_search_worker**:
+   - Indexes a worker ("John Smith")
    - Searches for "Smith"
-   - Verifies correct patient ID returned
+   - Verifies correct worker ID returned
 
 2. **test_fuzzy_search**:
-   - Indexes patient with family name "Smith"
+   - Indexes worker with family name "Smith"
    - Fuzzy searches for "Smyth" (typo)
-   - Verifies fuzzy matching finds the patient
+   - Verifies fuzzy matching finds the worker
 
 3. **test_bulk_indexing**:
-   - Indexes 3 patients in bulk
+   - Indexes 3 workers in bulk
    - Checks index statistics show 3 documents
    - Validates bulk commit efficiency
 
-4. **test_delete_patient**:
-   - Indexes a patient
+4. **test_delete_worker**:
+   - Indexes a worker
    - Verifies document exists (stats show 1 doc)
-   - Deletes the patient
-   - Searches for patient, verifies 0 results
+   - Deletes the worker
+   - Searches for worker, verifies 0 results
 
 5. **test_search_by_name_and_year**:
-   - Indexes patient "John Smith" born 1980-01-15
+   - Indexes worker "John Smith" born 1980-01-15
    - Searches by name "Smith" and year 1980
-   - Verifies correct patient ID returned
+   - Verifies correct worker ID returned
 
 **Test Results:** All 8 tests passing ✅
 
-## Integration with Patient Matching
+## Integration with Worker Matching
 
-The search engine is designed to work seamlessly with the patient matching algorithms from Phase 3:
+The search engine is designed to work seamlessly with the worker matching algorithms from Phase 3:
 
 ### Blocking Strategy
 
 ```rust
 // Use search to reduce candidate set for matching
 let candidate_ids = search_engine.search_by_name_and_year(
-    &patient.name.family,
-    patient.birth_date.map(|d| d.year()),
+    &worker.name.family,
+    worker.birth_date.map(|d| d.year()),
     100
 )?;
 
 // Retrieve candidates from database
-let candidates = db.get_patients(&candidate_ids)?;
+let candidates = db.get_workers(&candidate_ids)?;
 
 // Run sophisticated matching on reduced set
 let matcher = ProbabilisticMatcher::new(config);
-let matches = matcher.find_matches(&patient, &candidates)?;
+let matches = matcher.find_matches(&worker, &candidates)?;
 ```
 
 **Benefits:**
+
 - Reduces O(n) matching to O(log n) search + O(k) matching where k << n
 - Fuzzy search catches name variations before matching
 - Birth year filter further narrows candidates
-- Scales to millions of patients efficiently
+- Scales to millions of workers efficiently
 
 ### Search-First Workflow
 
 1. **Fast Search**: Tantivy quickly finds ~100 candidates from millions
-2. **Sophisticated Matching**: Patient matching algorithms compare against small set
+2. **Sophisticated Matching**: Worker matching algorithms compare against small set
 3. **Ranked Results**: Combined search relevance + match scores
 
 ## Performance Characteristics
@@ -394,8 +403,9 @@ let matches = matcher.find_matches(&patient, &candidates)?;
 ### Index Size
 
 Based on the schema design:
-- Average document size: ~500 bytes per patient
-- For 10 million patients: ~5 GB index size
+
+- Average document size: ~500 bytes per worker
+- For 10 million workers: ~5 GB index size
 - With compression and optimization: ~3-4 GB
 
 ### Query Performance
@@ -403,7 +413,7 @@ Based on the schema design:
 - **Exact searches**: Sub-millisecond for most queries
 - **Fuzzy searches**: 1-5 milliseconds typical
 - **Multi-field searches**: 2-10 milliseconds typical
-- **Bulk indexing**: ~10,000 patients/second
+- **Bulk indexing**: ~10,000 workers/second
 
 ### Optimization Strategies Implemented
 
@@ -429,7 +439,7 @@ Based on the schema design:
 2. **Full name field**: Enables phrase matching across full names
 3. **Identifier formatting**: "TYPE:VALUE" format for searchable identifiers
 4. **Address decomposition**: Separate city/state/postal for filtering
-5. **Active status as FAST**: Efficient filtering of inactive patients
+5. **Active status as FAST**: Efficient filtering of inactive workers
 
 ### Search Strategy Choices
 
@@ -442,7 +452,7 @@ Based on the schema design:
 
 ### Current Integrations
 
-1. **Patient Model**: Uses `Patient`, `HumanName`, `Identifier` structs from Phase 1
+1. **Worker Model**: Uses `Worker`, `HumanName`, `Identifier` structs from Phase 1
 2. **Error Handling**: Uses centralized `Error::Search` variant
 3. **Matching Module**: Designed for `search_by_name_and_year()` blocking
 
@@ -451,7 +461,7 @@ Based on the schema design:
 1. **REST API** (Phase 5): Search endpoints will use `SearchEngine`
 2. **FHIR API** (Phase 6): FHIR search parameters mapped to Tantivy queries
 3. **gRPC API** (Phase 7): Streaming search results for large result sets
-4. **Event Streaming** (Phase 9): Index updates triggered by patient events
+4. **Event Streaming** (Phase 9): Index updates triggered by worker events
 5. **Observability** (Phase 10): Search query metrics and tracing
 
 ## File Summary
@@ -459,15 +469,15 @@ Based on the schema design:
 ### Created Files
 
 1. **src/search/index.rs** (234 lines)
-   - `PatientIndexSchema` struct with 11 fields
-   - `PatientIndex` struct with create/open/optimize methods
+   - `WorkerIndexSchema` struct with 11 fields
+   - `WorkerIndex` struct with create/open/optimize methods
    - `IndexStats` struct
    - 3 unit tests
 
 2. **src/search/mod.rs** (395 lines)
-   - `SearchEngine` struct wrapping PatientIndex
-   - 6 public methods: index_patient, index_patients, search, fuzzy_search, search_by_name_and_year, delete_patient, stats, optimize
-   - `create_test_patient` helper for tests
+   - `SearchEngine` struct wrapping WorkerIndex
+   - 6 public methods: index_worker, index_workers, search, fuzzy_search, search_by_name_and_year, delete_worker, stats, optimize
+   - `create_test_worker` helper for tests
    - 5 comprehensive tests
 
 3. **src/search/query.rs** (empty stub)
@@ -482,6 +492,7 @@ None (search module was self-contained in this phase)
 While Phase 4 core objectives are complete, potential enhancements include:
 
 1. **Query Builder API**: Fluent API for complex queries
+
    ```rust
    QueryBuilder::new()
        .family_name("Smith")
@@ -513,7 +524,7 @@ While Phase 4 core objectives are complete, potential enhancements include:
 - ✅ Fuzzy search working (edit distance 2)
 - ✅ Multi-field search functional
 - ✅ Bulk indexing efficient (single commit)
-- ✅ Integration-ready for patient matching
+- ✅ Integration-ready for worker matching
 - ✅ Index management complete (create, optimize, stats, delete)
 
 ## Next Phase Preview
@@ -521,7 +532,7 @@ While Phase 4 core objectives are complete, potential enhancements include:
 **Phase 5: RESTful API (Axum)** will implement:
 
 - HTTP server with Axum framework
-- Patient CRUD endpoints (POST, GET, PUT, DELETE)
+- Worker CRUD endpoints (POST, GET, PUT, DELETE)
 - Search endpoint using `SearchEngine::search()`
 - Matching endpoint using `ProbabilisticMatcher::find_matches()`
 - Request validation and error handling
@@ -529,15 +540,16 @@ While Phase 4 core objectives are complete, potential enhancements include:
 - Health check endpoint
 
 The search engine from Phase 4 will be exposed via:
+
 ```
-GET  /api/v1/patients/search?q=Smith&limit=10
-GET  /api/v1/patients/search/fuzzy?q=Smyth&limit=10
-POST /api/v1/patients/match
+GET  /api/workers/search?q=Smith&limit=10
+GET  /api/workers/search/fuzzy?q=Smyth&limit=10
+POST /api/workers/match
 ```
 
 ## Conclusion
 
-Phase 4 successfully delivered a production-ready search engine for the Master Patient Index system. The Tantivy integration provides fast, accurate patient searches with fuzzy matching capabilities essential for healthcare applications where name variations and typos are common. The search engine is optimized for the blocking strategy needed by patient matching algorithms, enabling the system to scale to millions of patients efficiently.
+Phase 4 successfully delivered a production-ready search engine for the Master Worker Index system. The Tantivy integration provides fast, accurate worker searches with fuzzy matching capabilities essential for healthcare applications where name variations and typos are common. The search engine is optimized for the blocking strategy needed by worker matching algorithms, enabling the system to scale to millions of workers efficiently.
 
 **Phase 4 Status: COMPLETE ✅**
 

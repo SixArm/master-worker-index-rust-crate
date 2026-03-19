@@ -1,10 +1,7 @@
 //! Observability setup with OpenTelemetry
 
 use opentelemetry::{global, KeyValue};
-use opentelemetry_sdk::{
-    trace::{self, Tracer},
-    Resource,
-};
+use opentelemetry_sdk::Resource;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::config::ObservabilityConfig;
@@ -16,7 +13,7 @@ pub mod traces;
 /// Initialize OpenTelemetry tracing and logging
 pub fn init_telemetry(config: &ObservabilityConfig) -> Result<()> {
     // Set up resource with service information
-    let resource = Resource::new(vec![
+    let _resource = Resource::new(vec![
         KeyValue::new("service.name", config.service_name.clone()),
         KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
     ]);
@@ -50,10 +47,10 @@ pub mod custom_metrics {
     use opentelemetry::metrics::{Counter, Histogram};
 
     pub struct MpiMetrics {
-        pub patient_created: Counter<u64>,
-        pub patient_updated: Counter<u64>,
-        pub patient_deleted: Counter<u64>,
-        pub patient_matched: Counter<u64>,
+        pub worker_created: Counter<u64>,
+        pub worker_updated: Counter<u64>,
+        pub worker_deleted: Counter<u64>,
+        pub worker_matched: Counter<u64>,
         pub match_score: Histogram<f64>,
         pub api_request_duration: Histogram<f64>,
         pub search_query_duration: Histogram<f64>,

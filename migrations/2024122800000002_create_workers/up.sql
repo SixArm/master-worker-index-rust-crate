@@ -1,6 +1,6 @@
--- Create patients table
+-- Create workers table
 
-CREATE TABLE patients (
+CREATE TABLE workers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     active BOOLEAN NOT NULL DEFAULT true,
     gender VARCHAR(20) NOT NULL CHECK (gender IN ('male', 'female', 'other', 'unknown')),
@@ -22,10 +22,10 @@ CREATE TABLE patients (
     deleted_by VARCHAR(255)
 );
 
--- Indexes for patients
-CREATE INDEX idx_patients_birth_date ON patients(birth_date);
-CREATE INDEX idx_patients_gender ON patients(gender);
-CREATE INDEX idx_patients_active ON patients(active);
-CREATE INDEX idx_patients_organization ON patients(managing_organization_id);
-CREATE INDEX idx_patients_deleted_at ON patients(deleted_at);
-CREATE INDEX idx_patients_deceased ON patients(deceased);
+-- Indexes for workers
+CREATE INDEX idx_workers_birth_date ON workers(birth_date);
+CREATE INDEX idx_workers_gender ON workers(gender);
+CREATE INDEX idx_workers_active ON workers(active);
+CREATE INDEX idx_workers_organization ON workers(managing_organization_id);
+CREATE INDEX idx_workers_deleted_at ON workers(deleted_at);
+CREATE INDEX idx_workers_deceased ON workers(deceased);

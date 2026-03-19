@@ -3,18 +3,14 @@
 use tantivy::{
     schema::{Schema, Field, STORED, TEXT, STRING, FAST},
     Index, IndexWriter, IndexReader, ReloadPolicy,
-    collector::TopDocs,
-    query::QueryParser,
-    doc,
 };
 use std::path::Path;
-use uuid::Uuid;
 
 use crate::Result;
 
-/// Fields in the patient search index
+/// Fields in the worker search index
 #[derive(Clone)]
-pub struct PatientIndexSchema {
+pub struct WorkerIndexSchema {
     pub schema: Schema,
     pub id: Field,
     pub family_name: Field,
@@ -26,11 +22,12 @@ pub struct PatientIndexSchema {
     pub city: Field,
     pub state: Field,
     pub identifiers: Field,
+    pub worker_type: Field,
     pub active: Field,
 }
 
-impl PatientIndexSchema {
-    /// Create the patient index schema
+impl WorkerIndexSchema {
+    /// Create the worker index schema
     pub fn new() -> Self {
         let mut schema_builder = Schema::builder();
 
@@ -54,6 +51,9 @@ impl PatientIndexSchema {
         // Identifiers (indexed and stored)
         let identifiers = schema_builder.add_text_field("identifiers", TEXT | STORED);
 
+        // Worker type (indexed and stored, for filtering by role)
+        let worker_type = schema_builder.add_text_field("worker_type", STRING | STORED);
+
         // Active status (for filtering)
         let active = schema_builder.add_text_field("active", STRING | FAST);
 
@@ -71,28 +71,29 @@ impl PatientIndexSchema {
             city,
             state,
             identifiers,
+            worker_type,
             active,
         }
     }
 }
 
-impl Default for PatientIndexSchema {
+impl Default for WorkerIndexSchema {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Patient search index
-pub struct PatientIndex {
+/// Worker search index
+pub struct WorkerIndex {
     index: Index,
-    schema: PatientIndexSchema,
+    schema: WorkerIndexSchema,
     reader: IndexReader,
 }
 
-impl PatientIndex {
+impl WorkerIndex {
     /// Create a new index at the given path
     pub fn create<P: AsRef<Path>>(index_path: P) -> Result<Self> {
-        let schema_def = PatientIndexSchema::new();
+        let schema_def = WorkerIndexSchema::new();
         let index = Index::create_in_dir(index_path, schema_def.schema.clone())
             .map_err(|e| crate::Error::Search(format!("Failed to create index: {}", e)))?;
 
@@ -111,7 +112,7 @@ impl PatientIndex {
 
     /// Open an existing index at the given path
     pub fn open<P: AsRef<Path>>(index_path: P) -> Result<Self> {
-        let schema_def = PatientIndexSchema::new();
+        let schema_def = WorkerIndexSchema::new();
         let index = Index::open_in_dir(index_path)
             .map_err(|e| crate::Error::Search(format!("Failed to open index: {}", e)))?;
 
@@ -153,7 +154,7 @@ impl PatientIndex {
     }
 
     /// Get the schema
-    pub fn schema(&self) -> &PatientIndexSchema {
+    pub fn schema(&self) -> &WorkerIndexSchema {
         &self.schema
     }
 
@@ -182,7 +183,7 @@ impl PatientIndex {
 
     /// Optimize the index (wait for merges to complete)
     pub fn optimize(&self) -> Result<()> {
-        let mut writer = self.writer(50)?;
+        let writer = self.writer(50)?;
         writer
             .wait_merging_threads()
             .map_err(|e| crate::Error::Search(format!("Failed to optimize index: {}", e)))?;
@@ -205,7 +206,7 @@ mod tests {
     #[test]
     fn test_create_index() {
         let temp_dir = TempDir::new().unwrap();
-        let index = PatientIndex::create(temp_dir.path()).unwrap();
+        let index = WorkerIndex::create(temp_dir.path()).unwrap();
 
         let stats = index.stats().unwrap();
         assert_eq!(stats.num_docs, 0);
@@ -213,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_schema_fields() {
-        let schema = PatientIndexSchema::new();
+        let schema = WorkerIndexSchema::new();
 
         // Verify fields exist
         let _ = schema.id;
@@ -229,11 +230,162 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // First call creates
-        let index1 = PatientIndex::create_or_open(temp_dir.path()).unwrap();
+        let index1 = WorkerIndex::create_or_open(temp_dir.path()).unwrap();
         assert_eq!(index1.stats().unwrap().num_docs, 0);
 
         // Second call opens
-        let index2 = PatientIndex::create_or_open(temp_dir.path()).unwrap();
+        let index2 = WorkerIndex::create_or_open(temp_dir.path()).unwrap();
         assert_eq!(index2.stats().unwrap().num_docs, 0);
+    }
+
+    #[test]
+    fn test_index_worker_and_retrieve() {
+        let temp_dir = TempDir::new().unwrap();
+        let worker_index = WorkerIndex::create(temp_dir.path()).unwrap();
+        let schema = worker_index.schema();
+
+        let mut writer = worker_index.writer(50).unwrap();
+        let worker_id = uuid::Uuid::new_v4().to_string();
+
+        let mut doc = tantivy::TantivyDocument::default();
+        doc.add_text(schema.id, &worker_id);
+        doc.add_text(schema.family_name, "Smith");
+        doc.add_text(schema.given_names, "John");
+        doc.add_text(schema.full_name, "John Smith");
+        doc.add_text(schema.birth_date, "1980-01-15");
+        doc.add_text(schema.gender, "male");
+        doc.add_text(schema.active, "true");
+
+        writer.add_document(doc).unwrap();
+        writer.commit().unwrap();
+
+        worker_index.reload().unwrap();
+
+        let stats = worker_index.stats().unwrap();
+        assert_eq!(stats.num_docs, 1, "Index should contain 1 document");
+    }
+
+    #[test]
+    fn test_fuzzy_search_typo() {
+        use tantivy::collector::TopDocs;
+        use tantivy::query::FuzzyTermQuery;
+        use tantivy::schema::Term;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worker_index = WorkerIndex::create(temp_dir.path()).unwrap();
+        let schema = worker_index.schema();
+
+        let mut writer = worker_index.writer(50).unwrap();
+        let mut doc = tantivy::TantivyDocument::default();
+        doc.add_text(schema.id, &uuid::Uuid::new_v4().to_string());
+        doc.add_text(schema.family_name, "johnson");
+        doc.add_text(schema.given_names, "robert");
+        doc.add_text(schema.full_name, "robert johnson");
+        doc.add_text(schema.active, "true");
+        writer.add_document(doc).unwrap();
+        writer.commit().unwrap();
+
+        worker_index.reload().unwrap();
+
+        let searcher = worker_index.reader().searcher();
+        let term = Term::from_field_text(schema.family_name, "jonson"); // typo
+        let query = FuzzyTermQuery::new(term, 1, true);
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
+        assert_eq!(top_docs.len(), 1, "Fuzzy search should find 'johnson' with typo 'jonson'");
+    }
+
+    #[test]
+    fn test_delete_worker_from_index() {
+        use tantivy::schema::Term;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worker_index = WorkerIndex::create(temp_dir.path()).unwrap();
+        let schema = worker_index.schema();
+
+        let worker_id = uuid::Uuid::new_v4().to_string();
+
+        {
+            let mut writer = worker_index.writer(50).unwrap();
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(schema.id, &worker_id);
+            doc.add_text(schema.family_name, "Smith");
+            doc.add_text(schema.given_names, "John");
+            doc.add_text(schema.full_name, "John Smith");
+            doc.add_text(schema.active, "true");
+            writer.add_document(doc).unwrap();
+            writer.commit().unwrap();
+            // writer dropped here, releasing the lock
+        }
+
+        worker_index.reload().unwrap();
+        assert_eq!(worker_index.stats().unwrap().num_docs, 1);
+
+        {
+            let mut writer = worker_index.writer(50).unwrap();
+            let term = Term::from_field_text(schema.id, &worker_id);
+            writer.delete_term(term);
+            writer.commit().unwrap();
+        }
+
+        worker_index.reload().unwrap();
+        assert_eq!(worker_index.stats().unwrap().num_docs, 0, "Document should be deleted");
+    }
+
+    #[test]
+    fn test_search_no_results() {
+        use tantivy::collector::TopDocs;
+        use tantivy::query::TermQuery;
+        use tantivy::schema::{Term, IndexRecordOption};
+
+        let temp_dir = TempDir::new().unwrap();
+        let worker_index = WorkerIndex::create(temp_dir.path()).unwrap();
+        let schema = worker_index.schema();
+
+        // Don't add any documents, search should return nothing
+        let searcher = worker_index.reader().searcher();
+        let term = Term::from_field_text(schema.family_name, "nonexistent");
+        let query = TermQuery::new(term, IndexRecordOption::Basic);
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
+        assert_eq!(top_docs.len(), 0, "Search on empty index should return 0 results");
+    }
+
+    #[test]
+    fn test_search_by_name_and_year_filter() {
+        use tantivy::collector::TopDocs;
+        use tantivy::query::{BooleanQuery, TermQuery};
+        use tantivy::schema::{Term, IndexRecordOption};
+
+        let temp_dir = TempDir::new().unwrap();
+        let worker_index = WorkerIndex::create(temp_dir.path()).unwrap();
+        let schema = worker_index.schema();
+
+        let mut writer = worker_index.writer(50).unwrap();
+
+        // Add two workers: same name, different birth years
+        for birth_date in &["1980-01-15", "1990-06-20"] {
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(schema.id, &uuid::Uuid::new_v4().to_string());
+            doc.add_text(schema.family_name, "smith");
+            doc.add_text(schema.given_names, "john");
+            doc.add_text(schema.full_name, "john smith");
+            doc.add_text(schema.birth_date, birth_date);
+            doc.add_text(schema.active, "true");
+            writer.add_document(doc).unwrap();
+        }
+        writer.commit().unwrap();
+        worker_index.reload().unwrap();
+
+        assert_eq!(worker_index.stats().unwrap().num_docs, 2);
+
+        // Search filtering by exact birth_date
+        let searcher = worker_index.reader().searcher();
+        let name_term = Term::from_field_text(schema.family_name, "smith");
+        let dob_term = Term::from_field_text(schema.birth_date, "1980-01-15");
+        let query = BooleanQuery::intersection(vec![
+            Box::new(TermQuery::new(name_term, IndexRecordOption::Basic)),
+            Box::new(TermQuery::new(dob_term, IndexRecordOption::Basic)),
+        ]);
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
+        assert_eq!(top_docs.len(), 1, "Should find exactly 1 worker with matching name+DOB");
     }
 }

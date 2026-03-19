@@ -1,6 +1,6 @@
-# Master Patient Index - Deployment Guide
+# Master Worker Index - Deployment Guide
 
-This guide covers deploying the Master Patient Index (MPI) system using Docker and Docker Compose.
+This guide covers deploying the Master Worker Index (MPI) system using Docker and Docker Compose.
 
 ## Table of Contents
 
@@ -32,8 +32,8 @@ docker-compose --version
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-org/master-patient-index-rust-crate.git
-cd master-patient-index-rust-crate
+git clone https://github.com/your-org/master-worker-index-rust-crate.git
+cd master-worker-index-rust-crate
 ```
 
 ### 2. Configure Environment
@@ -66,7 +66,7 @@ docker-compose logs -f mpi-server
 docker-compose exec mpi-server bash
 
 # Inside the container, run migrations
-diesel migration run --database-url=$DATABASE_URL
+sea-orm-cli migrate up --database-url=$DATABASE_URL
 
 # Exit the container
 exit
@@ -76,23 +76,24 @@ exit
 
 ```bash
 # Check service health
-curl http://localhost:8080/api/v1/health
+curl http://localhost:8080/api/health
 
 # Expected response:
 # {
 #   "status": "healthy",
-#   "service": "master-patient-index",
+#   "service": "master-worker-index",
 #   "version": "0.1.0"
 # }
 ```
 
 ### 6. Access Services
 
-- **MPI API**: http://localhost:8080/api/v1
+- **MPI API**: http://localhost:8080/api
 - **Swagger UI**: http://localhost:8080/swagger-ui
 - **pgAdmin** (optional): http://localhost:5050
 
 To enable pgAdmin:
+
 ```bash
 docker-compose --profile tools up -d
 ```
@@ -110,6 +111,7 @@ nano .env.production
 ```
 
 **IMPORTANT**: Update the following in `.env.production`:
+
 - `DATABASE_URL` - Use strong password and SSL connection
 - `POSTGRES_PASSWORD` - Use cryptographically strong password
 - `RUST_LOG` - Set to `info` for production
@@ -121,7 +123,7 @@ nano .env.production
 docker build -t mpi-server:latest .
 
 # Tag for registry
-docker tag mpi-server:latest your-registry.com/mpi-server:v1.0.0
+docker tag mpi-server:latest your-registry.com/master_worker_index-server:v1.0.0
 ```
 
 ### 3. Push to Container Registry
@@ -131,7 +133,7 @@ docker tag mpi-server:latest your-registry.com/mpi-server:v1.0.0
 docker login your-registry.com
 
 # Push image
-docker push your-registry.com/mpi-server:v1.0.0
+docker push your-registry.com/master_worker_index-server:v1.0.0
 ```
 
 ### 4. Deploy to Production Server
@@ -141,7 +143,7 @@ docker push your-registry.com/mpi-server:v1.0.0
 ssh production-server
 
 # Pull latest image
-docker pull your-registry.com/mpi-server:v1.0.0
+docker pull your-registry.com/master_worker_index-server:v1.0.0
 
 # Start with production compose file
 docker-compose -f docker-compose.production.yml up -d
@@ -255,7 +257,7 @@ docker-compose --profile tools up -d
 
 ```bash
 docker-compose exec mpi-server bash
-diesel migration run
+sea-orm-cli migrate up
 exit
 ```
 
@@ -264,19 +266,20 @@ exit
 Add to `docker-compose.yml`:
 
 ```yaml
-  mpi-migrations:
-    image: mpi-server:latest
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    command: diesel migration run
-    networks:
-      - mpi-network
+mpi-migrations:
+  image: mpi-server:latest
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment:
+    DATABASE_URL: ${DATABASE_URL}
+  command: sea-orm-cli migrate up
+  networks:
+    - mpi-network
 ```
 
 Then:
+
 ```bash
 docker-compose up mpi-migrations
 ```
@@ -285,12 +288,12 @@ docker-compose up mpi-migrations
 
 ```bash
 # Inside development environment
-diesel migration generate add_new_feature
+sea-orm-cli migrate generate add_new_feature
 
 # Edit up.sql and down.sql
 # Test migration
-diesel migration run
-diesel migration redo
+sea-orm-cli migrate up
+sea-orm-cli migrate refresh
 ```
 
 ## Monitoring
@@ -300,7 +303,7 @@ diesel migration redo
 The MPI server includes a health check endpoint:
 
 ```bash
-curl http://localhost:8080/api/v1/health
+curl http://localhost:8080/api/health
 ```
 
 ### Docker Health Checks
@@ -351,11 +354,13 @@ docker stats mpi-server
 ### Container Won't Start
 
 **Check logs**:
+
 ```bash
 docker-compose logs mpi-server
 ```
 
 **Common issues**:
+
 - Database not ready: Wait for PostgreSQL health check
 - Missing environment variables: Check `.env` file
 - Port already in use: Change `MPI_PORT` in `.env`
@@ -363,11 +368,13 @@ docker-compose logs mpi-server
 ### Database Connection Issues
 
 **Test database connectivity**:
+
 ```bash
 docker-compose exec postgres psql -U mpi_user -d mpi -c "SELECT 1;"
 ```
 
 **Common issues**:
+
 - Wrong credentials: Check `DATABASE_URL` matches PostgreSQL settings
 - Network issues: Ensure containers are on same network
 - PostgreSQL not ready: Check PostgreSQL health status
@@ -375,6 +382,7 @@ docker-compose exec postgres psql -U mpi_user -d mpi -c "SELECT 1;"
 ### Migration Failures
 
 **Reset database** (CAUTION: Destroys all data):
+
 ```bash
 docker-compose down -v
 docker-compose up -d postgres
@@ -385,12 +393,13 @@ DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
 \q
 # Run migrations
-docker-compose exec mpi-server diesel migration run
+docker-compose exec mpi-server sea-orm-cli migrate up
 ```
 
 ### Search Index Issues
 
 **Reset search index**:
+
 ```bash
 docker-compose exec mpi-server rm -rf /app/data/search_index/*
 docker-compose restart mpi-server
@@ -399,6 +408,7 @@ docker-compose restart mpi-server
 ### High Memory Usage
 
 **Adjust connection pool sizes**:
+
 ```bash
 # In .env
 DATABASE_MAX_CONNECTIONS=5
@@ -406,6 +416,7 @@ DATABASE_MIN_CONNECTIONS=1
 ```
 
 **Set Docker memory limits**:
+
 ```yaml
 # In docker-compose.yml
 services:
@@ -419,6 +430,7 @@ services:
 ### Port Conflicts
 
 **Change exposed ports**:
+
 ```bash
 # In .env
 MPI_PORT=8081
@@ -485,10 +497,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
+          cpus: "2"
           memory: 1G
         reservations:
-          cpus: '1'
+          cpus: "1"
           memory: 512M
 ```
 
@@ -504,6 +516,7 @@ For high-availability deployments:
 4. **Stateless Design**: MPI server is stateless, scales horizontally
 
 Example:
+
 ```bash
 docker-compose up -d --scale mpi-server=3
 ```
@@ -518,7 +531,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4'
+          cpus: "4"
           memory: 4G
 ```
 

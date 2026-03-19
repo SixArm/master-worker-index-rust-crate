@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::models::Patient;
+use crate::models::Worker;
 use crate::api::{ApiResponse, ApiError};
 use crate::matching::MatchResult;
 use super::state::AppState;
@@ -35,27 +35,27 @@ pub struct HealthResponse {
 pub async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "healthy".to_string(),
-        service: "master-patient-index".to_string(),
+        service: "master-worker-index".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
 
-/// Create patient request
+/// Create worker request
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct CreatePatientRequest {
+pub struct CreateWorkerRequest {
     #[serde(flatten)]
-    pub patient: Patient,
+    pub worker: Worker,
 }
 
-/// Create a new patient
-pub async fn create_patient(
+/// Create a new worker
+pub async fn create_worker(
     State(_state): State<AppState>,
-    Json(payload): Json<Patient>,
+    Json(payload): Json<Worker>,
 ) -> impl IntoResponse {
     // TODO: Actually insert into database using Diesel
-    // For now, return the patient as-is
+    // For now, return the worker as-is
     // In a real implementation:
-    // 1. Validate patient data
+    // 1. Validate worker data
     // 2. Check for duplicates using matcher
     // 3. Insert into database
     // 4. Index in search engine
@@ -64,93 +64,93 @@ pub async fn create_patient(
     (StatusCode::CREATED, Json(ApiResponse::success(payload)))
 }
 
-/// Get a patient by ID
+/// Get a worker by ID
 #[utoipa::path(
     get,
-    path = "/api/v1/patients/{id}",
-    tag = "patients",
+    path = "/api/v1/workers/{id}",
+    tag = "workers",
     params(
-        ("id" = Uuid, Path, description = "Patient UUID")
+        ("id" = Uuid, Path, description = "Worker UUID")
     ),
     responses(
-        (status = 200, description = "Patient found", body = ApiResponse<Patient>),
-        (status = 404, description = "Patient not found", body = ApiResponse<()>),
+        (status = 200, description = "Worker found", body = ApiResponse<Worker>),
+        (status = 404, description = "Worker not found", body = ApiResponse<()>),
         (status = 500, description = "Internal server error", body = ApiResponse<()>)
     )
 )]
-pub async fn get_patient(
+pub async fn get_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    // TODO: Implement patient retrieval from database
+    // TODO: Implement worker retrieval from database
     // 1. Query database by UUID
-    // 2. Convert DbPatient to Patient model
-    // 3. Return patient or 404
+    // 2. Convert DbWorker to Worker model
+    // 3. Return worker or 404
 
     (StatusCode::NOT_IMPLEMENTED, Json(ApiResponse::<()>::error(
         "NOT_IMPLEMENTED",
-        "Patient retrieval not yet implemented"
+        "Worker retrieval not yet implemented"
     )))
 }
 
-/// Update a patient
+/// Update a worker
 #[utoipa::path(
     put,
-    path = "/api/v1/patients/{id}",
-    tag = "patients",
+    path = "/api/v1/workers/{id}",
+    tag = "workers",
     params(
-        ("id" = Uuid, Path, description = "Patient UUID")
+        ("id" = Uuid, Path, description = "Worker UUID")
     ),
-    request_body = Patient,
+    request_body = Worker,
     responses(
-        (status = 200, description = "Patient updated", body = ApiResponse<Patient>),
-        (status = 404, description = "Patient not found", body = ApiResponse<()>),
+        (status = 200, description = "Worker updated", body = ApiResponse<Worker>),
+        (status = 404, description = "Worker not found", body = ApiResponse<()>),
         (status = 500, description = "Internal server error", body = ApiResponse<()>)
     )
 )]
-pub async fn update_patient(
+pub async fn update_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
-    Json(_payload): Json<Patient>,
+    Json(_payload): Json<Worker>,
 ) -> impl IntoResponse {
-    // TODO: Implement patient update
-    // 1. Verify patient exists
+    // TODO: Implement worker update
+    // 1. Verify worker exists
     // 2. Update database record
     // 3. Update search index
     // 4. Publish update event
 
     (StatusCode::NOT_IMPLEMENTED, Json(ApiResponse::<()>::error(
         "NOT_IMPLEMENTED",
-        "Patient update not yet implemented"
+        "Worker update not yet implemented"
     )))
 }
 
-/// Delete a patient (soft delete)
+/// Delete a worker (soft delete)
 #[utoipa::path(
     delete,
-    path = "/api/v1/patients/{id}",
-    tag = "patients",
+    path = "/api/v1/workers/{id}",
+    tag = "workers",
     params(
-        ("id" = Uuid, Path, description = "Patient UUID")
+        ("id" = Uuid, Path, description = "Worker UUID")
     ),
     responses(
-        (status = 204, description = "Patient deleted"),
-        (status = 404, description = "Patient not found", body = ApiResponse<()>),
+        (status = 204, description = "Worker deleted"),
+        (status = 404, description = "Worker not found", body = ApiResponse<()>),
         (status = 500, description = "Internal server error", body = ApiResponse<()>)
     )
 )]
-pub async fn delete_patient(
+pub async fn delete_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    // TODO: Implement soft patient deletion
+    // TODO: Implement soft worker deletion
     // 1. Set deleted_at timestamp
     // 2. Optionally remove from search index
     // 3. Publish deletion event
 
     (StatusCode::NOT_IMPLEMENTED, Json(ApiResponse::<()>::error(
         "NOT_IMPLEMENTED",
-        "Patient deletion not yet implemented"
+        "Worker deletion not yet implemented"
     )))
 }
 
@@ -176,15 +176,15 @@ fn default_limit() -> usize {
 /// Search results response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SearchResponse {
-    pub patients: Vec<Patient>,
+    pub workers: Vec<Worker>,
     pub total: usize,
     pub query: String,
 }
 
-/// Search for patients
+/// Search for workers
 #[utoipa::path(
     get,
-    path = "/api/v1/patients/search",
+    path = "/api/v1/workers/search",
     tag = "search",
     params(
         ("q" = String, Query, description = "Search query"),
@@ -197,7 +197,7 @@ pub struct SearchResponse {
         (status = 500, description = "Internal server error", body = ApiResponse<()>)
     )
 )]
-pub async fn search_patients(
+pub async fn search_workers(
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> impl IntoResponse {
@@ -205,18 +205,18 @@ pub async fn search_patients(
     let limit = params.limit.min(100);
 
     // Perform search using search engine
-    let patient_ids = if params.fuzzy {
+    let worker_ids = if params.fuzzy {
         state.search_engine.fuzzy_search(&params.q, limit)
     } else {
         state.search_engine.search(&params.q, limit)
     };
 
-    match patient_ids {
+    match worker_ids {
         Ok(ids) => {
-            // TODO: Fetch full patient records from database
+            // TODO: Fetch full worker records from database
             // For now, return empty list
             let response = SearchResponse {
-                patients: vec![],
+                workers: vec![],
                 total: ids.len(),
                 query: params.q,
             };
@@ -235,9 +235,9 @@ pub async fn search_patients(
 /// Match request payload
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MatchRequest {
-    /// Patient to match against existing records
+    /// Worker to match against existing records
     #[serde(flatten)]
-    pub patient: Patient,
+    pub worker: Worker,
 
     /// Minimum match score threshold (0.0 to 1.0)
     #[serde(default)]
@@ -255,7 +255,7 @@ fn default_match_limit() -> usize {
 /// Match result with score
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MatchResponse {
-    pub patient: Patient,
+    pub worker: Worker,
     pub score: f64,
     pub quality: String,
 }
@@ -267,10 +267,10 @@ pub struct MatchResultsResponse {
     pub total: usize,
 }
 
-/// Match a patient against existing records
+/// Match a worker against existing records
 #[utoipa::path(
     post,
-    path = "/api/v1/patients/match",
+    path = "/api/v1/workers/match",
     tag = "matching",
     request_body = MatchRequest,
     responses(
@@ -279,20 +279,20 @@ pub struct MatchResultsResponse {
         (status = 500, description = "Internal server error", body = ApiResponse<()>)
     )
 )]
-pub async fn match_patient(
+pub async fn match_worker(
     State(state): State<AppState>,
     Json(payload): Json<MatchRequest>,
 ) -> impl IntoResponse {
-    // Use search engine to get candidate patients (blocking)
-    let family_name = &payload.patient.name.family;
-    let birth_year = payload.patient.birth_date.map(|d| d.year());
+    // Use search engine to get candidate workers (blocking)
+    let family_name = &payload.worker.name.family;
+    let birth_year = payload.worker.birth_date.map(|d| d.year());
 
     let candidate_ids = state.search_engine
         .search_by_name_and_year(family_name, birth_year, 100);
 
     match candidate_ids {
         Ok(ids) => {
-            // TODO: Fetch full patient records from database
+            // TODO: Fetch full worker records from database
             // TODO: Run matcher.find_matches() on candidates
             // For now, return empty results
             let response = MatchResultsResponse {

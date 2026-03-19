@@ -73,7 +73,7 @@ impl Default for Config {
                 grpc_port: 50051,
             },
             database: DatabaseConfig {
-                url: "postgres://localhost/mpi".to_string(),
+                url: "postgres://localhost/master_worker_index".to_string(),
                 max_connections: 10,
                 min_connections: 2,
             },
@@ -87,13 +87,13 @@ impl Default for Config {
                 fuzzy_match_score: 0.8,
             },
             observability: ObservabilityConfig {
-                service_name: "master-patient-index".to_string(),
+                service_name: "master-worker-index".to_string(),
                 otlp_endpoint: "http://localhost:4317".to_string(),
                 log_level: "info".to_string(),
             },
             streaming: StreamingConfig {
                 broker_url: "localhost:9003".to_string(),
-                topic: "patient-events".to_string(),
+                topic: "worker-events".to_string(),
             },
         }
     }

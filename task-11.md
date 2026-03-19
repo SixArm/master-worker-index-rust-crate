@@ -2,7 +2,7 @@
 
 ## Overview
 
-This phase implements comprehensive containerization and deployment infrastructure for the Master Patient Index (MPI), making it production-ready and easily deployable across different environments. The implementation includes multi-stage Docker builds, Docker Compose orchestration for development and testing, and complete deployment documentation.
+This phase implements comprehensive containerization and deployment infrastructure for the Master Worker Index (MPI), making it production-ready and easily deployable across different environments. The implementation includes multi-stage Docker builds, Docker Compose orchestration for development and testing, and complete deployment documentation.
 
 ## Task Description
 
@@ -133,7 +133,7 @@ USER mpi
 WORKDIR /app
 
 # Copy binary from builder stage
-COPY --from=builder /app/target/release/master_patient_index /app/mpi-server
+COPY --from=builder /app/target/release/master_worker_index /app/master_worker_index-server
 
 # Copy migrations for runtime schema management
 COPY --chown=mpi:mpi migrations ./migrations
@@ -143,7 +143,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+    CMD curl -f http://localhost:8080/api/health || exit 1
 
 # Set environment defaults (can be overridden)
 ENV RUST_LOG=info
@@ -152,7 +152,7 @@ ENV SERVER_PORT=8080
 ENV SEARCH_INDEX_PATH=/app/data/search_index
 
 # Run the application
-CMD ["/app/mpi-server"]
+CMD ["/app/master_worker_index-server"]
 ```
 
 **Key Features**:
@@ -165,16 +165,17 @@ CMD ["/app/mpi-server"]
 6. **Environment Defaults**: Sensible defaults, overridable at runtime
 
 **Image Size Comparison**:
+
 - Full Rust image: ~1.2 GB
 - Multi-stage build: ~150-200 MB
 - **Reduction**: ~85% smaller
 
-###  2. Docker Compose for Development
+### 2. Docker Compose for Development
 
 Created comprehensive development environment with all services.
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL database
@@ -198,7 +199,7 @@ services:
     networks:
       - mpi-network
 
-  # Master Patient Index application
+  # Master Worker Index application
   mpi-server:
     build:
       context: .
@@ -220,7 +221,7 @@ services:
     volumes:
       - search_index:/app/data/search_index
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -243,7 +244,7 @@ services:
     networks:
       - mpi-network
     profiles:
-      - tools  # Only start with --profile tools
+      - tools # Only start with --profile tools
 
 volumes:
   postgres_data:
@@ -266,6 +267,7 @@ networks:
 7. **Restart Policies**: `unless-stopped` for automatic recovery
 
 **Usage**:
+
 ```bash
 # Start core services
 docker-compose up -d
@@ -285,7 +287,7 @@ docker-compose down
 Created isolated testing environment with ephemeral database.
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL test database
@@ -306,7 +308,7 @@ services:
     networks:
       - mpi-test-network
     tmpfs:
-      - /var/lib/postgresql/data  # Use tmpfs for faster tests
+      - /var/lib/postgresql/data # Use tmpfs for faster tests
 
   # Test runner
   test-runner:
@@ -318,7 +320,7 @@ services:
       postgres-test:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://test_user:test_password@postgres-test:5432/mpi_test
+      DATABASE_URL: postgresql://test_user:test_password@postgres-test:5432/master_worker_index_test
       SEARCH_INDEX_PATH: /tmp/test_index
       RUST_LOG: info
       RUST_BACKTRACE: 1
@@ -346,6 +348,7 @@ networks:
 6. **Full Test Suite**: Unit tests + integration tests
 
 **Usage**:
+
 ```bash
 # Run all tests
 docker-compose -f docker-compose.test.yml up --build
@@ -391,6 +394,7 @@ CMD ["cargo", "test"]
 ```
 
 **Optimizations**:
+
 - Diesel CLI installed for migration management
 - Test dependencies pre-built for faster execution
 - Includes `curl` for health check testing
@@ -403,7 +407,7 @@ Created comprehensive environment templates:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://mpi_user:mpi_password@localhost:5432/mpi
+DATABASE_URL=postgresql://master_worker_index_user:mpi_password@localhost:5432/master_worker_index
 DATABASE_MAX_CONNECTIONS=10
 
 # Server
@@ -425,7 +429,7 @@ RUST_LOG=info
 
 ```bash
 # Database - Use SSL and strong password
-DATABASE_URL=postgresql://mpi_prod:STRONG_PASSWORD@db-host:5432/mpi_production?sslmode=require
+DATABASE_URL=postgresql://master_worker_index_prod:STRONG_PASSWORD@db-host:5432/master_worker_index_production?sslmode=require
 DATABASE_MAX_CONNECTIONS=50
 
 # Server
@@ -437,7 +441,7 @@ SEARCH_INDEX_PATH=/app/data/search_index
 SEARCH_CACHE_SIZE_MB=2048
 
 # Logging - Production level
-RUST_LOG=info,master_patient_index=info
+RUST_LOG=info,master_worker_index=info
 RUST_BACKTRACE=0
 ```
 
@@ -456,6 +460,7 @@ search_index/
 ```
 
 **Benefits**:
+
 - Faster build context upload
 - Smaller build context
 - Prevents sensitive files in image
@@ -501,6 +506,7 @@ Created 400+ line comprehensive deployment guide covering:
 **Decision**: Use multi-stage Dockerfile (builder + runtime).
 
 **Rationale**:
+
 - Separates build-time and runtime dependencies
 - Smaller final image (~85% reduction)
 - Faster downloads and deployments
@@ -513,12 +519,14 @@ Created 400+ line comprehensive deployment guide covering:
 **Decision**: Run container as `mpi` user (UID 1000), not root.
 
 **Rationale**:
+
 - Security best practice (principle of least privilege)
 - Limits blast radius if container compromised
 - Required by many Kubernetes security policies
 - Healthcare compliance requirements
 
 **Implementation**:
+
 ```dockerfile
 RUN useradd -m -u 1000 -s /bin/bash mpi
 USER mpi
@@ -529,15 +537,17 @@ USER mpi
 **Decision**: Include `HEALTHCHECK` instruction in Dockerfile.
 
 **Rationale**:
+
 - Container orchestrators (Docker, Kubernetes) use for readiness probes
 - Enables automatic restart of unhealthy containers
 - Documents health check endpoint
 - Works out-of-box without compose file
 
 **Implementation**:
+
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+    CMD curl -f http://localhost:8080/api/health || exit 1
 ```
 
 ### 4. Named Volumes for Persistence
@@ -545,12 +555,14 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 **Decision**: Use named volumes, not bind mounts.
 
 **Rationale**:
+
 - Docker manages volume lifecycle
 - Works across platforms (Windows, Mac, Linux)
 - Better performance than bind mounts
 - Easier backup and migration
 
 **Volumes**:
+
 - `postgres_data`: PostgreSQL database files
 - `search_index`: Tantivy search index
 - `pgadmin_data`: pgAdmin configuration
@@ -560,12 +572,14 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 **Decision**: Use in-memory database for tests.
 
 **Rationale**:
+
 - 10-100x faster than disk I/O
 - Tests don't need persistence
 - Automatic cleanup after tests
 - Reduced wear on SSDs
 
 **Implementation**:
+
 ```yaml
 tmpfs:
   - /var/lib/postgresql/data
@@ -576,12 +590,14 @@ tmpfs:
 **Decision**: Use `depends_on` with `service_healthy` condition.
 
 **Rationale**:
+
 - MPI server only starts after PostgreSQL is ready
 - Prevents connection errors during startup
 - Graceful startup sequence
 - No need for external wait scripts
 
 **Implementation**:
+
 ```yaml
 depends_on:
   postgres:
@@ -593,12 +609,14 @@ depends_on:
 **Decision**: Use profiles for optional services (pgAdmin).
 
 **Rationale**:
+
 - Core services start by default
 - Development tools optional
 - Reduces resource usage
 - Cleaner default experience
 
 **Usage**:
+
 ```bash
 docker-compose --profile tools up -d
 ```
@@ -608,12 +626,14 @@ docker-compose --profile tools up -d
 **Decision**: Provide defaults with `${VAR:-default}` syntax.
 
 **Rationale**:
+
 - Works without `.env` file
 - Sensible defaults for development
 - Easy customization via environment
 - Self-documenting
 
 **Example**:
+
 ```yaml
 POSTGRES_DB: ${POSTGRES_DB:-mpi}
 ```
@@ -695,8 +715,8 @@ jobs:
       - name: Push to Registry
         if: github.ref == 'refs/heads/main'
         run: |
-          docker tag mpi-server:${{ github.sha }} registry.io/mpi-server:latest
-          docker push registry.io/mpi-server:latest
+          docker tag mpi-server:${{ github.sha }} registry.io/master_worker_index-server:latest
+          docker push registry.io/master_worker_index-server:latest
 ```
 
 ### Deployment Pipeline
@@ -725,7 +745,7 @@ docker-compose logs --no-color > logs.txt
 Health check endpoint provides basic metrics:
 
 ```bash
-curl http://localhost:8080/api/v1/health
+curl http://localhost:8080/api/health
 ```
 
 **Future**: Prometheus metrics endpoint (`/metrics`)
@@ -736,7 +756,7 @@ curl http://localhost:8080/api/v1/health
 
 ```bash
 OTLP_ENDPOINT=http://otel-collector:4317
-OTLP_SERVICE_NAME=master-patient-index
+OTLP_SERVICE_NAME=master-worker-index
 ```
 
 ## Future Enhancements
@@ -759,24 +779,24 @@ spec:
         app: mpi-server
     spec:
       containers:
-      - name: mpi-server
-        image: mpi-server:v1.0.0
-        ports:
-        - containerPort: 8080
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: mpi-secrets
-              key: database-url
-        readinessProbe:
-          httpGet:
-            path: /api/v1/health
-            port: 8080
-        livenessProbe:
-          httpGet:
-            path: /api/v1/health
-            port: 8080
+        - name: mpi-server
+          image: mpi-server:v1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mpi-secrets
+                  key: database-url
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
 ```
 
 ### Helm Chart
@@ -799,7 +819,7 @@ charts/
 ### Docker Swarm Stack
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   mpi-server:
     image: mpi-server:v1.0.0
@@ -844,7 +864,8 @@ Phase 11 provides complete Docker and deployment infrastructure:
 ✅ **Security Best Practices**: Non-root user, minimal image, health checks
 ✅ **Production Ready**: Monitoring, logging, resource limits
 
-The Master Patient Index is now:
+The Master Worker Index is now:
+
 - **Portable**: Runs anywhere Docker runs
 - **Reproducible**: Same container, same behavior
 - **Scalable**: Easy horizontal scaling

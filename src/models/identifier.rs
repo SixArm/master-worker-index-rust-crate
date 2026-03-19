@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Patient or organization identifier (MRN, SSN, NPI, etc.)
+/// Worker or organization identifier (MRN, SSN, NPI, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Identifier {
     /// Identifier use (e.g., "official", "temp", "secondary")
@@ -27,7 +27,7 @@ pub struct Identifier {
 pub enum IdentifierUse {
     /// The identifier recommended for display and use in real-world interactions
     Usual,
-    /// The identifier considered to be most trusted for this patient
+    /// The identifier considered to be most trusted for this worker
     Official,
     /// A temporary identifier
     Temp,
@@ -52,6 +52,8 @@ pub enum IdentifierType {
     PPN,
     /// Tax ID Number
     TAX,
+    /// ODS Organisation Code
+    ODS,
     /// Other identifier type
     #[serde(other)]
     Other,
@@ -66,6 +68,7 @@ impl std::fmt::Display for IdentifierType {
             IdentifierType::NPI => write!(f, "NPI"),
             IdentifierType::PPN => write!(f, "PPN"),
             IdentifierType::TAX => write!(f, "TAX"),
+            IdentifierType::ODS => write!(f, "ODS"),
             IdentifierType::Other => write!(f, "OTHER"),
         }
     }

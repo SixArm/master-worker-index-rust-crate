@@ -2,18 +2,18 @@
 
 ## Overview
 
-Phase 6 focused on implementing comprehensive HL7 FHIR R5 (Fast Healthcare Interoperability Resources) support for the Master Patient Index system. This phase created FHIR-compliant resource definitions, bidirectional conversion between internal models and FHIR resources, FHIR REST API endpoints, and standardized error handling using OperationOutcome.
+Phase 6 focused on implementing comprehensive HL7 FHIR R5 (Fast Healthcare Interoperability Resources) support for the Master Worker Index system. This phase created FHIR-compliant resource definitions, bidirectional conversion between internal models and FHIR resources, FHIR REST API endpoints, and standardized error handling using OperationOutcome.
 
 FHIR is the global standard for healthcare data exchange, enabling interoperability between different healthcare systems. By implementing FHIR R5 (the latest version), the MPI system can integrate with Electronic Health Records (EHRs), Health Information Exchanges (HIEs), and other healthcare applications that speak FHIR.
 
 ## Task Description
 
-The task was to add full FHIR R5 Patient resource support to the MPI system, including:
+The task was to add full FHIR R5 Worker resource support to the MPI system, including:
 
 1. **FHIR Resource Models**: Create Rust structures that mirror FHIR R5 resource definitions with proper serialization
-2. **Conversion Logic**: Implement bidirectional conversion between internal Patient models and FHIR Patient resources
+2. **Conversion Logic**: Implement bidirectional conversion between internal Worker models and FHIR Worker resources
 3. **FHIR REST API**: Create FHIR-compliant HTTP endpoints following FHIR RESTful API specifications
-4. **FHIR Search**: Implement FHIR search parameters for patient lookup
+4. **FHIR Search**: Implement FHIR search parameters for worker lookup
 5. **Error Handling**: Use FHIR OperationOutcome for standardized error responses
 6. **FHIR Bundle**: Support FHIR Bundle format for batch operations and search results
 
@@ -41,8 +41,8 @@ The task was to add full FHIR R5 Patient resource support to the MPI system, inc
 The primary purpose of FHIR support is to enable the MPI system to participate in the healthcare interoperability ecosystem:
 
 - **EHR Integration**: Connect with Epic, Cerner, Allscripts, and other major EHR systems
-- **HIE Participation**: Enable patient matching across Health Information Exchanges
-- **Data Exchange**: Share patient demographics using industry-standard formats
+- **HIE Participation**: Enable worker matching across Health Information Exchanges
+- **Data Exchange**: Share worker demographics using industry-standard formats
 - **API Compatibility**: Support clients that expect FHIR-compliant endpoints
 
 ### Standards Compliance
@@ -65,7 +65,7 @@ From a technical perspective, FHIR provides:
 
 ## Objectives Completed
 
-1. ✅ Create comprehensive FHIR R5 Patient resource model with all standard fields
+1. ✅ Create comprehensive FHIR R5 Worker resource model with all standard fields
 2. ✅ Implement bidirectional conversion functions (Internal ↔ FHIR)
 3. ✅ Add FHIR search parameters (name, family, given, identifier, birthdate, gender)
 4. ✅ Implement FHIR OperationOutcome for standardized error responses
@@ -80,18 +80,18 @@ From a technical perspective, FHIR provides:
 
 Created comprehensive FHIR R5 resource structures following the specification:
 
-#### FhirPatient Resource
+#### FhirWorker Resource
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FhirPatient {
-    pub resource_type: String,           // Always "Patient"
-    pub id: Option<String>,              // Patient UUID
+pub struct FhirWorker {
+    pub resource_type: String,           // Always "Worker"
+    pub id: Option<String>,              // Worker UUID
     pub meta: Option<FhirMeta>,          // Metadata (version, lastUpdated)
     pub identifier: Option<Vec<FhirIdentifier>>,  // MRN, SSN, etc.
     pub active: Option<bool>,            // Active status
-    pub name: Option<Vec<FhirHumanName>>,        // Patient names
+    pub name: Option<Vec<FhirHumanName>>,        // Worker names
     pub telecom: Option<Vec<FhirContactPoint>>,  // Phone, email
     pub gender: Option<String>,          // male, female, other, unknown
     pub birth_date: Option<String>,      // YYYY-MM-DD
@@ -100,7 +100,7 @@ pub struct FhirPatient {
     pub marital_status: Option<FhirCodeableConcept>,
     pub multiple_birth: Option<FhirMultipleBirth>, // Boolean or Integer
     pub photo: Option<Vec<FhirAttachment>>,
-    pub link: Option<Vec<FhirPatientLink>>,      // Linked patients
+    pub link: Option<Vec<FhirWorkerLink>>,      // Linked workers
     pub managing_organization: Option<FhirReference>,
 }
 ```
@@ -115,6 +115,7 @@ pub struct FhirPatient {
 #### Supporting FHIR Types
 
 **FhirMeta** - Resource metadata:
+
 ```rust
 pub struct FhirMeta {
     pub version_id: Option<String>,     // Version for optimistic locking
@@ -122,7 +123,8 @@ pub struct FhirMeta {
 }
 ```
 
-**FhirIdentifier** - Patient identifiers:
+**FhirIdentifier** - Worker identifiers:
+
 ```rust
 pub struct FhirIdentifier {
     pub use_: Option<String>,           // usual, official, temp, etc.
@@ -134,6 +136,7 @@ pub struct FhirIdentifier {
 ```
 
 **FhirHumanName** - Person names:
+
 ```rust
 pub struct FhirHumanName {
     pub use_: Option<String>,           // usual, official, nickname, etc.
@@ -146,6 +149,7 @@ pub struct FhirHumanName {
 ```
 
 **FhirAddress** - Addresses:
+
 ```rust
 pub struct FhirAddress {
     pub use_: Option<String>,           // home, work, temp, old
@@ -160,6 +164,7 @@ pub struct FhirAddress {
 ```
 
 **FhirCodeableConcept** - Coded values:
+
 ```rust
 pub struct FhirCodeableConcept {
     pub coding: Option<Vec<FhirCoding>>,
@@ -178,6 +183,7 @@ pub struct FhirCoding {
 FHIR allows certain fields to have multiple types. We use Rust enums with `#[serde(untagged)]`:
 
 **FhirDeceased** - Boolean or DateTime:
+
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -188,6 +194,7 @@ pub enum FhirDeceased {
 ```
 
 **FhirMultipleBirth** - Boolean or Integer:
+
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -230,44 +237,49 @@ impl FhirOperationOutcome {
 ```json
 {
   "resourceType": "OperationOutcome",
-  "issue": [{
-    "severity": "error",
-    "code": "not-found",
-    "diagnostics": "Patient with id '123e4567-e89b-12d3-a456-426614174000' not found"
-  }]
+  "issue": [
+    {
+      "severity": "error",
+      "code": "not-found",
+      "diagnostics": "Worker with id '123e4567-e89b-12d3-a456-426614174000' not found"
+    }
+  ]
 }
 ```
 
 ### 2. FHIR Conversion Functions (`src/api/fhir/mod.rs` - 370 lines)
 
-Implemented comprehensive bidirectional conversion between internal Patient model and FHIR Patient resource.
+Implemented comprehensive bidirectional conversion between internal Worker model and FHIR Worker resource.
 
 #### Internal → FHIR Conversion
 
 ```rust
-pub fn to_fhir_patient(patient: &Patient) -> FhirPatient
+pub fn to_fhir_worker(worker: &Worker) -> FhirWorker
 ```
 
 **Conversion Logic:**
 
 1. **Basic Fields**:
+
    ```rust
-   fhir_patient.id = Some(patient.id.to_string());
-   fhir_patient.active = Some(patient.active);
+   fhir_worker.id = Some(worker.id.to_string());
+   fhir_worker.active = Some(worker.active);
    ```
 
 2. **Metadata**:
+
    ```rust
-   fhir_patient.meta = Some(FhirMeta {
+   fhir_worker.meta = Some(FhirMeta {
        version_id: None,
-       last_updated: Some(patient.updated_at.to_rfc3339()),
+       last_updated: Some(worker.updated_at.to_rfc3339()),
    });
    ```
 
 3. **Identifiers** - Map internal Identifier to FHIR:
+
    ```rust
-   fhir_patient.identifier = Some(
-       patient.identifiers.iter().map(|id| FhirIdentifier {
+   fhir_worker.identifier = Some(
+       worker.identifiers.iter().map(|id| FhirIdentifier {
            use_: id.use_type.as_ref().map(|u| format!("{:?}", u).to_lowercase()),
            type_: Some(FhirCodeableConcept {
                coding: Some(vec![FhirCoding {
@@ -288,30 +300,32 @@ pub fn to_fhir_patient(patient: &Patient) -> FhirPatient
    ```
 
 4. **Names** - Primary + Additional:
+
    ```rust
    let mut names = vec![FhirHumanName {
-       use_: patient.name.use_type.as_ref().map(|u| format!("{:?}", u).to_lowercase()),
-       text: Some(patient.full_name()),
-       family: Some(patient.name.family.clone()),
-       given: if patient.name.given.is_empty() {
+       use_: worker.name.use_type.as_ref().map(|u| format!("{:?}", u).to_lowercase()),
+       text: Some(worker.full_name()),
+       family: Some(worker.name.family.clone()),
+       given: if worker.name.given.is_empty() {
            None
        } else {
-           Some(patient.name.given.clone())
+           Some(worker.name.given.clone())
        },
-       prefix: if patient.name.prefix.is_empty() { None } else { Some(patient.name.prefix.clone()) },
-       suffix: if patient.name.suffix.is_empty() { None } else { Some(patient.name.suffix.clone()) },
+       prefix: if worker.name.prefix.is_empty() { None } else { Some(worker.name.prefix.clone()) },
+       suffix: if worker.name.suffix.is_empty() { None } else { Some(worker.name.suffix.clone()) },
    }];
 
-   for add_name in &patient.additional_names {
+   for add_name in &worker.additional_names {
        names.push(/* convert additional name */);
    }
-   fhir_patient.name = Some(names);
+   fhir_worker.name = Some(names);
    ```
 
 5. **Addresses** - Map line1/line2 to FHIR lines array:
+
    ```rust
-   fhir_patient.address = Some(
-       patient.addresses.iter().map(|addr| {
+   fhir_worker.address = Some(
+       worker.addresses.iter().map(|addr| {
            let mut lines = Vec::new();
            if let Some(ref l1) = addr.line1 { lines.push(l1.clone()); }
            if let Some(ref l2) = addr.line2 { lines.push(l2.clone()); }
@@ -331,9 +345,10 @@ pub fn to_fhir_patient(patient: &Patient) -> FhirPatient
    ```
 
 6. **Deceased** - Polymorphic type:
+
    ```rust
-   if patient.deceased {
-       fhir_patient.deceased = Some(if let Some(dt) = patient.deceased_datetime {
+   if worker.deceased {
+       fhir_worker.deceased = Some(if let Some(dt) = worker.deceased_datetime {
            FhirDeceased::DateTime(dt.to_rfc3339())
        } else {
            FhirDeceased::Boolean(true)
@@ -341,12 +356,12 @@ pub fn to_fhir_patient(patient: &Patient) -> FhirPatient
    }
    ```
 
-7. **Patient Links** - References to other patients:
+7. **Worker Links** - References to other workers:
    ```rust
-   fhir_patient.link = Some(
-       patient.links.iter().map(|link| FhirPatientLink {
+   fhir_worker.link = Some(
+       worker.links.iter().map(|link| FhirWorkerLink {
            other: FhirReference {
-               reference: Some(format!("Patient/{}", link.other_patient_id)),
+               reference: Some(format!("Worker/{}", link.other_worker_id)),
                display: None,
            },
            type_: format!("{:?}", link.link_type).to_lowercase(),
@@ -357,14 +372,15 @@ pub fn to_fhir_patient(patient: &Patient) -> FhirPatient
 #### FHIR → Internal Conversion
 
 ```rust
-pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
+pub fn from_fhir_worker(fhir_worker: &FhirWorker) -> Result<Worker>
 ```
 
 **Conversion Logic:**
 
 1. **ID Parsing** - Validate UUID:
+
    ```rust
-   let id = if let Some(ref id_str) = fhir_patient.id {
+   let id = if let Some(ref id_str) = fhir_worker.id {
        Uuid::parse_str(id_str)
            .map_err(|e| crate::Error::Validation(format!("Invalid UUID: {}", e)))?
    } else {
@@ -373,8 +389,9 @@ pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
    ```
 
 2. **Name Parsing** - Validate at least one name:
+
    ```rust
-   let name = if let Some(ref names) = fhir_patient.name {
+   let name = if let Some(ref names) = fhir_worker.name {
        if let Some(first_name) = names.first() {
            HumanName {
                use_type: first_name.use_.as_ref().and_then(|u| match u.as_str() {
@@ -389,16 +406,17 @@ pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
                suffix: first_name.suffix.clone().unwrap_or_default(),
            }
        } else {
-           return Err(crate::Error::Validation("Patient must have at least one name".to_string()));
+           return Err(crate::Error::Validation("Worker must have at least one name".to_string()));
        }
    } else {
-       return Err(crate::Error::Validation("Patient must have at least one name".to_string()));
+       return Err(crate::Error::Validation("Worker must have at least one name".to_string()));
    };
    ```
 
 3. **Gender Parsing** - Map FHIR codes:
+
    ```rust
-   let gender = if let Some(ref g) = fhir_patient.gender {
+   let gender = if let Some(ref g) = fhir_worker.gender {
        match g.as_str() {
            "male" => Gender::Male,
            "female" => Gender::Female,
@@ -412,8 +430,9 @@ pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
    ```
 
 4. **Address Parsing** - Map FHIR lines to line1/line2:
+
    ```rust
-   let addresses = if let Some(ref addrs) = fhir_patient.address {
+   let addresses = if let Some(ref addrs) = fhir_worker.address {
        addrs.iter().map(|faddr| {
            let lines = faddr.line.clone().unwrap_or_default();
            Address {
@@ -431,8 +450,9 @@ pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
    ```
 
 5. **Telecom Parsing** - Filter invalid entries:
+
    ```rust
-   let telecom = if let Some(ref tels) = fhir_patient.telecom {
+   let telecom = if let Some(ref tels) = fhir_worker.telecom {
        tels.iter().filter_map(|ftel| {
            let system = ftel.system.as_ref().and_then(|s| match s.as_str() {
                "phone" => Some(ContactPointSystem::Phone),
@@ -452,7 +472,7 @@ pub fn from_fhir_patient(fhir_patient: &FhirPatient) -> Result<Patient>
 
 6. **Deceased Parsing** - Handle polymorphic type:
    ```rust
-   let (deceased, deceased_datetime) = match &fhir_patient.deceased {
+   let (deceased, deceased_datetime) = match &fhir_worker.deceased {
        Some(FhirDeceased::Boolean(b)) => (*b, None),
        Some(FhirDeceased::DateTime(dt)) => {
            let parsed_dt = chrono::DateTime::parse_from_rfc3339(dt).ok()
@@ -495,44 +515,45 @@ pub struct FhirSearchParams {
 }
 ```
 
-#### GET /fhir/Patient/{id}
+#### GET /fhir/Worker/{id}
 
 ```rust
-pub async fn get_fhir_patient(
+pub async fn get_fhir_worker(
     State(_state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     // TODO: Fetch from database
     // TODO: Convert to FHIR
-    let outcome = FhirOperationOutcome::not_found("Patient", &id.to_string());
+    let outcome = FhirOperationOutcome::not_found("Worker", &id.to_string());
     (StatusCode::NOT_FOUND, Json(serde_json::to_value(outcome).unwrap()))
 }
 ```
 
 **Future Implementation:**
+
 ```rust
 // 1. Query database
-let patient = db.get_patient(id)?;
+let worker = db.get_worker(id)?;
 
 // 2. Convert to FHIR
-let fhir_patient = to_fhir_patient(&patient);
+let fhir_worker = to_fhir_worker(&worker);
 
 // 3. Return FHIR resource
-(StatusCode::OK, Json(serde_json::to_value(fhir_patient).unwrap()))
+(StatusCode::OK, Json(serde_json::to_value(fhir_worker).unwrap()))
 ```
 
-#### POST /fhir/Patient
+#### POST /fhir/Worker
 
 ```rust
-pub async fn create_fhir_patient(
+pub async fn create_fhir_worker(
     State(_state): State<AppState>,
-    Json(fhir_patient): Json<FhirPatient>,
+    Json(fhir_worker): Json<FhirWorker>,
 ) -> impl IntoResponse {
-    match from_fhir_patient(&fhir_patient) {
-        Ok(_patient) => {
+    match from_fhir_worker(&fhir_worker) {
+        Ok(_worker) => {
             // TODO: Insert into database
             // TODO: Index in search engine
-            (StatusCode::CREATED, Json(serde_json::to_value(fhir_patient).unwrap()))
+            (StatusCode::CREATED, Json(serde_json::to_value(fhir_worker).unwrap()))
         }
         Err(e) => {
             let outcome = FhirOperationOutcome::invalid(&e.to_string());
@@ -543,23 +564,24 @@ pub async fn create_fhir_patient(
 ```
 
 **Validation:**
+
 - Converts FHIR → Internal to validate structure
 - Returns 400 Bad Request with OperationOutcome if invalid
 - Returns 201 Created with created resource if valid
 
-#### PUT /fhir/Patient/{id}
+#### PUT /fhir/Worker/{id}
 
 ```rust
-pub async fn update_fhir_patient(
+pub async fn update_fhir_worker(
     State(_state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(fhir_patient): Json<FhirPatient>,
+    Json(fhir_worker): Json<FhirWorker>,
 ) -> impl IntoResponse {
-    match from_fhir_patient(&fhir_patient) {
-        Ok(_patient) => {
+    match from_fhir_worker(&fhir_worker) {
+        Ok(_worker) => {
             // TODO: Update in database
             // TODO: Update search index
-            let outcome = FhirOperationOutcome::not_found("Patient", &id.to_string());
+            let outcome = FhirOperationOutcome::not_found("Worker", &id.to_string());
             (StatusCode::NOT_FOUND, Json(serde_json::to_value(outcome).unwrap()))
         }
         Err(e) => {
@@ -570,23 +592,23 @@ pub async fn update_fhir_patient(
 }
 ```
 
-#### DELETE /fhir/Patient/{id}
+#### DELETE /fhir/Worker/{id}
 
 ```rust
-pub async fn delete_fhir_patient(
+pub async fn delete_fhir_worker(
     State(_state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     // TODO: Soft delete in database
-    let outcome = FhirOperationOutcome::not_found("Patient", &id.to_string());
+    let outcome = FhirOperationOutcome::not_found("Worker", &id.to_string());
     (StatusCode::NOT_FOUND, Json(serde_json::to_value(outcome).unwrap()))
 }
 ```
 
-#### GET /fhir/Patient?name=Smith
+#### GET /fhir/Worker?name=Smith
 
 ```rust
-pub async fn search_fhir_patients(
+pub async fn search_fhir_workers(
     State(state): State<AppState>,
     Query(params): Query<FhirSearchParams>,
 ) -> impl IntoResponse {
@@ -605,8 +627,8 @@ pub async fn search_fhir_patients(
     let limit = params.count.unwrap_or(10).min(100);
 
     match state.search_engine.search(&search_query, limit) {
-        Ok(_patient_ids) => {
-            // TODO: Fetch patients and convert to FHIR
+        Ok(_worker_ids) => {
+            // TODO: Fetch workers and convert to FHIR
             // TODO: Create FHIR Bundle
             let bundle = serde_json::json!({
                 "resourceType": "Bundle",
@@ -625,6 +647,7 @@ pub async fn search_fhir_patients(
 ```
 
 **FHIR Bundle Format:**
+
 ```json
 {
   "resourceType": "Bundle",
@@ -632,11 +655,11 @@ pub async fn search_fhir_patients(
   "total": 2,
   "entry": [
     {
-      "fullUrl": "http://localhost:8080/fhir/Patient/123",
+      "fullUrl": "http://localhost:8080/fhir/Worker/123",
       "resource": {
-        "resourceType": "Patient",
+        "resourceType": "Worker",
         "id": "123",
-        "name": [{"family": "Smith", "given": ["John"]}]
+        "name": [{ "family": "Smith", "given": ["John"] }]
       }
     }
   ]
@@ -679,28 +702,32 @@ pub struct FhirBundleEntry {
 ### FHIR R5 Specification Adherence
 
 **Resource Structure:**
-- ✅ All Patient fields follow FHIR R5 spec
+
+- ✅ All Worker fields follow FHIR R5 spec
 - ✅ Proper camelCase field naming
 - ✅ Correct data types (string, boolean, dateTime, etc.)
 - ✅ Support for polymorphic types (deceased, multipleBirth)
 - ✅ Optional fields properly marked
 
 **RESTful API:**
+
 - ✅ Follows FHIR RESTful API patterns
 - ✅ Uses HTTP methods correctly (GET, POST, PUT, DELETE)
 - ✅ Returns proper HTTP status codes
 - ✅ Uses FHIR OperationOutcome for errors
 - ⏳ Pagination (TODO)
-- ⏳ _include and _revinclude (TODO)
+- ⏳ \_include and \_revinclude (TODO)
 
 **Search:**
+
 - ✅ Standard search parameters (name, family, given, gender, birthdate)
-- ✅ _count parameter for result limiting
+- ✅ \_count parameter for result limiting
 - ⏳ Advanced search modifiers (:exact, :contains, etc.)
 - ⏳ Chained searches
 - ⏳ Composite searches
 
 **Data Types:**
+
 - ✅ HumanName
 - ✅ Address
 - ✅ ContactPoint
@@ -714,17 +741,19 @@ pub struct FhirBundleEntry {
 ### FHIR Validation
 
 **Current Validation:**
-- Validates UUID format for patient IDs
+
+- Validates UUID format for worker IDs
 - Requires at least one name
 - Validates gender codes (male, female, other, unknown)
 - Validates ContactPointSystem enum values
 - Validates date formats (ISO 8601)
 
 **Future Validation:**
+
 - FHIR StructureDefinition validation
-- Cardinality checks (0..1, 1..1, 0..*, 1..*)
+- Cardinality checks (0..1, 1..1, 0.._, 1.._)
 - ValueSet validation for coded fields
-- Reference validation (Patient/123 exists)
+- Reference validation (Worker/123 exists)
 - Extension validation
 
 ## File Summary
@@ -732,27 +761,27 @@ pub struct FhirBundleEntry {
 ### Created Files
 
 1. **src/api/fhir/resources.rs** (266 lines)
-   - `FhirPatient` - Complete FHIR R5 Patient resource
+   - `FhirWorker` - Complete FHIR R5 Worker resource
    - `FhirMeta`, `FhirIdentifier`, `FhirHumanName`, `FhirContactPoint`
    - `FhirAddress`, `FhirCodeableConcept`, `FhirCoding`, `FhirReference`
-   - `FhirPatientLink`, `FhirAttachment`
+   - `FhirWorkerLink`, `FhirAttachment`
    - `FhirDeceased`, `FhirMultipleBirth` - Polymorphic types
    - `FhirOperationOutcome`, `FhirOperationOutcomeIssue`
    - Helper methods: `error()`, `not_found()`, `invalid()`
 
 2. **src/api/fhir/handlers.rs** (151 lines)
    - `FhirSearchParams` - FHIR search parameter struct
-   - `get_fhir_patient()` - GET /fhir/Patient/{id}
-   - `create_fhir_patient()` - POST /fhir/Patient
-   - `update_fhir_patient()` - PUT /fhir/Patient/{id}
-   - `delete_fhir_patient()` - DELETE /fhir/Patient/{id}
-   - `search_fhir_patients()` - GET /fhir/Patient?params
+   - `get_fhir_worker()` - GET /fhir/Worker/{id}
+   - `create_fhir_worker()` - POST /fhir/Worker
+   - `update_fhir_worker()` - PUT /fhir/Worker/{id}
+   - `delete_fhir_worker()` - DELETE /fhir/Worker/{id}
+   - `search_fhir_workers()` - GET /fhir/Worker?params
 
 ### Modified Files
 
 1. **src/api/fhir/mod.rs** (370 lines)
-   - `to_fhir_patient()` - Internal → FHIR conversion (210 lines)
-   - `from_fhir_patient()` - FHIR → Internal conversion (160 lines)
+   - `to_fhir_worker()` - Internal → FHIR conversion (210 lines)
+   - `from_fhir_worker()` - FHIR → Internal conversion (160 lines)
    - Module exports and imports
    - Added `handlers` module declaration
 
@@ -773,17 +802,19 @@ pub struct FhirBundleEntry {
 
 ### Bidirectional Conversion Strategy
 
-**Design Choice:** Separate `to_fhir_patient()` and `from_fhir_patient()` functions rather than implementing `From` trait.
+**Design Choice:** Separate `to_fhir_worker()` and `from_fhir_worker()` functions rather than implementing `From` trait.
 
 **Rationale:**
+
 - Conversion can fail (validation errors)
-- Need to return `Result<Patient>` from FHIR → Internal
+- Need to return `Result<Worker>` from FHIR → Internal
 - More explicit, easier to test
 - Allows for lossy conversions (some FHIR fields not in our model)
 
 ### JSON Serialization
 
 **Used serde with these attributes:**
+
 ```rust
 #[serde(rename_all = "camelCase")]  // FHIR uses camelCase
 #[serde(skip_serializing_if = "Option::is_none")]  // Omit null fields
@@ -791,6 +822,7 @@ pub struct FhirBundleEntry {
 ```
 
 **Benefits:**
+
 - Clean JSON output (no null clutter)
 - Correct FHIR field naming automatically
 - Type-safe polymorphic types
@@ -800,12 +832,13 @@ pub struct FhirBundleEntry {
 **All FHIR handlers return serde_json::Value:**
 
 ```rust
-(StatusCode::OK, Json(serde_json::to_value(fhir_patient).unwrap()))
+(StatusCode::OK, Json(serde_json::to_value(fhir_worker).unwrap()))
 (StatusCode::NOT_FOUND, Json(serde_json::to_value(outcome).unwrap()))
 ```
 
 **Why?**
-- Allows returning different types (FhirPatient or FhirOperationOutcome)
+
+- Allows returning different types (FhirWorker or FhirOperationOutcome)
 - Consistent with FHIR spec (any resource can be returned)
 - Simpler type inference in Rust
 
@@ -814,6 +847,7 @@ pub struct FhirBundleEntry {
 **Challenge:** Our internal Address model is simpler than FHIR's.
 
 **Internal Address:**
+
 ```rust
 pub struct Address {
     pub line1: Option<String>,
@@ -826,6 +860,7 @@ pub struct Address {
 ```
 
 **FHIR Address:**
+
 ```rust
 pub struct FhirAddress {
     pub use_: Option<String>,       // Not in our model
@@ -847,7 +882,7 @@ pub struct FhirAddress {
 
 1. **REST API State**: FHIR handlers use same `AppState` as REST API
 2. **Search Engine**: FHIR search uses Tantivy search engine (Phase 4)
-3. **Internal Models**: Conversion functions use Patient, HumanName, etc. (Phase 1)
+3. **Internal Models**: Conversion functions use Worker, HumanName, etc. (Phase 1)
 4. **Error Handling**: Uses centralized Error enum (Phase 1)
 
 ### Future Integrations
@@ -862,15 +897,15 @@ pub struct FhirAddress {
 ```rust
 // In src/main.rs or router setup
 let fhir_routes = Router::new()
-    .route("/Patient/:id", get(fhir::handlers::get_fhir_patient))
-    .route("/Patient/:id", put(fhir::handlers::update_fhir_patient))
-    .route("/Patient/:id", delete(fhir::handlers::delete_fhir_patient))
-    .route("/Patient", post(fhir::handlers::create_fhir_patient))
-    .route("/Patient", get(fhir::handlers::search_fhir_patients))
+    .route("/Worker/:id", get(fhir::handlers::get_fhir_worker))
+    .route("/Worker/:id", put(fhir::handlers::update_fhir_worker))
+    .route("/Worker/:id", delete(fhir::handlers::delete_fhir_worker))
+    .route("/Worker", post(fhir::handlers::create_fhir_worker))
+    .route("/Worker", get(fhir::handlers::search_fhir_workers))
     .with_state(app_state);
 
 Router::new()
-    .nest("/api/v1", rest_routes)
+    .nest("/api", rest_routes)
     .nest("/fhir", fhir_routes)
 ```
 
@@ -915,13 +950,14 @@ FHIR support helps meet:
 2. **Empty Bundle Results**: Search returns empty bundles
 3. **Limited Search Parameters**: Only basic parameters implemented
 4. **No Pagination**: Search results not paginated
-5. **No Includes**: _include and _revinclude not supported
+5. **No Includes**: \_include and \_revinclude not supported
 6. **No Versioning**: Resource versioning not implemented
 7. **No Conditional Operations**: If-Match, If-None-Match not supported
 
 ### Field Mapping TODOs
 
 **From Internal to FHIR:**
+
 - ✅ Basic demographics
 - ✅ Names (primary + additional)
 - ✅ Identifiers
@@ -934,6 +970,7 @@ FHIR support helps meet:
 - ⏳ General practitioner
 
 **From FHIR to Internal:**
+
 - ✅ Basic demographics
 - ✅ Primary name
 - ⏳ Additional names (not mapped)
@@ -947,7 +984,7 @@ FHIR support helps meet:
 1. **FHIR Bundle**: Complete implementation for batch/transaction
 2. **Search Modifiers**: Support :exact, :contains, :missing, etc.
 3. **Chained Searches**: organization.name, link.other.name
-4. **Reverse Chaining**: _has parameter
+4. **Reverse Chaining**: \_has parameter
 5. **Custom Search Parameters**: Project-specific search
 6. **FHIR Extensions**: Support for custom extensions
 7. **Provenance**: Track resource modifications
@@ -966,55 +1003,58 @@ FHIR support helps meet:
 ### Future Testing Needs
 
 1. **Conversion Tests**:
+
    ```rust
    #[test]
-   fn test_patient_to_fhir_conversion() {
-       let patient = create_test_patient();
-       let fhir = to_fhir_patient(&patient);
-       assert_eq!(fhir.id, Some(patient.id.to_string()));
+   fn test_worker_to_fhir_conversion() {
+       let worker = create_test_worker();
+       let fhir = to_fhir_worker(&worker);
+       assert_eq!(fhir.id, Some(worker.id.to_string()));
        assert_eq!(fhir.gender, Some("male".to_string()));
    }
 
    #[test]
-   fn test_fhir_to_patient_conversion() {
-       let fhir = create_test_fhir_patient();
-       let patient = from_fhir_patient(&fhir).unwrap();
-       assert_eq!(patient.name.family, "Smith");
+   fn test_fhir_to_worker_conversion() {
+       let fhir = create_test_fhir_worker();
+       let worker = from_fhir_worker(&fhir).unwrap();
+       assert_eq!(worker.name.family, "Smith");
    }
 
    #[test]
    fn test_round_trip_conversion() {
-       let original = create_test_patient();
-       let fhir = to_fhir_patient(&original);
-       let converted = from_fhir_patient(&fhir).unwrap();
+       let original = create_test_worker();
+       let fhir = to_fhir_worker(&original);
+       let converted = from_fhir_worker(&fhir).unwrap();
        // Assert key fields match
    }
    ```
 
 2. **FHIR Validation Tests**:
+
    ```rust
    #[test]
-   fn test_invalid_fhir_patient_rejected() {
-       let invalid_fhir = FhirPatient {
-           resource_type: "Patient".to_string(),
+   fn test_invalid_fhir_worker_rejected() {
+       let invalid_fhir = FhirWorker {
+           resource_type: "Worker".to_string(),
            name: None,  // Required field
            ..Default::default()
        };
-       assert!(from_fhir_patient(&invalid_fhir).is_err());
+       assert!(from_fhir_worker(&invalid_fhir).is_err());
    }
    ```
 
 3. **API Integration Tests**:
+
    ```rust
    #[tokio::test]
-   async fn test_create_fhir_patient() {
+   async fn test_create_fhir_worker() {
        let app = create_test_app();
        let response = app
            .oneshot(Request::builder()
-               .uri("/fhir/Patient")
+               .uri("/fhir/Worker")
                .method("POST")
                .header("content-type", "application/fhir+json")
-               .body(Body::from(fhir_patient_json))
+               .body(Body::from(fhir_worker_json))
                .unwrap())
            .await
            .unwrap();
@@ -1034,7 +1074,7 @@ FHIR support helps meet:
 - ✅ Zero compilation errors (23 warnings, all non-critical)
 - ✅ All 24 existing tests passing
 - ✅ 787 lines of FHIR-compliant code
-- ✅ Complete FhirPatient resource (16 fields)
+- ✅ Complete FhirWorker resource (16 fields)
 - ✅ 12 supporting FHIR data types
 - ✅ Bidirectional conversion (Internal ↔ FHIR)
 - ✅ 5 FHIR REST endpoints (foundation)
@@ -1046,7 +1086,7 @@ FHIR support helps meet:
 **Phase 7: Database Integration** will implement:
 
 - Diesel ORM setup with connection pooling
-- Patient CRUD operations (Create, Read, Update, Delete)
+- Worker CRUD operations (Create, Read, Update, Delete)
 - Database queries for search and matching
 - Transaction management
 - Database migrations execution
@@ -1058,15 +1098,15 @@ This will complete the CRUD handlers from Phase 5 (REST API) and Phase 6 (FHIR A
 // Phase 7 will complete these TODOs:
 
 // REST API
-pub async fn create_patient(...) {
+pub async fn create_worker(...) {
     // TODO: Actually insert into database using Diesel ← Phase 7
     // TODO: Index in search engine ← Phase 7
 }
 
 // FHIR API
-pub async fn create_fhir_patient(...) {
-    match from_fhir_patient(&fhir_patient) {
-        Ok(patient) => {
+pub async fn create_fhir_worker(...) {
+    match from_fhir_worker(&fhir_worker) {
+        Ok(worker) => {
             // TODO: Insert into database ← Phase 7
             // TODO: Index in search engine ← Phase 7
         }
@@ -1076,12 +1116,12 @@ pub async fn create_fhir_patient(...) {
 
 ## Conclusion
 
-Phase 6 successfully delivered comprehensive HL7 FHIR R5 support for the Master Patient Index system. The implementation provides standards-compliant FHIR Patient resources, bidirectional conversion between internal models and FHIR formats, and FHIR RESTful API endpoints.
+Phase 6 successfully delivered comprehensive HL7 FHIR R5 support for the Master Worker Index system. The implementation provides standards-compliant FHIR Worker resources, bidirectional conversion between internal models and FHIR formats, and FHIR RESTful API endpoints.
 
 Key achievements include:
 
-1. **Complete FHIR R5 Patient Resource**: All standard fields with proper typing
-2. **Robust Conversion Logic**: 370 lines of conversion code handling all patient attributes
+1. **Complete FHIR R5 Worker Resource**: All standard fields with proper typing
+2. **Robust Conversion Logic**: 370 lines of conversion code handling all worker attributes
 3. **Standards Compliance**: Follows FHIR R5 specification for resource structure and APIs
 4. **Error Handling**: Uses FHIR OperationOutcome for standardized error responses
 5. **Extensibility**: Foundation ready for additional FHIR resources
@@ -1096,10 +1136,10 @@ With the REST API (Phase 5) and FHIR API (Phase 6) complete, the next phase will
 
 **Implementation Date**: December 28, 2024
 **Total Lines of Code**: 787 lines (266 resources + 370 conversion + 151 handlers)
-**FHIR Resources**: Patient, OperationOutcome
+**FHIR Resources**: Worker, OperationOutcome
 **FHIR Data Types**: 12 types (HumanName, Address, Identifier, CodeableConcept, etc.)
 **API Endpoints**: 5 FHIR RESTful endpoints
-**Conversion**: Bidirectional Patient ↔ FHIR
+**Conversion**: Bidirectional Worker ↔ FHIR
 **Test Coverage**: All 24 tests passing
 **Compilation Status**: ✅ Success (0 errors, 23 warnings)
 **FHIR Compliance**: R5 specification adherence

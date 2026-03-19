@@ -2,14 +2,14 @@
 
 ## Overview
 
-Phase 5 focused on implementing a production-ready REST API using the Axum web framework. This phase created a comprehensive HTTP API for patient management, search, and matching operations, complete with OpenAPI documentation, CORS support, and error handling.
+Phase 5 focused on implementing a production-ready REST API using the Axum web framework. This phase created a comprehensive HTTP API for worker management, search, and matching operations, complete with OpenAPI documentation, CORS support, and error handling.
 
 ## Objectives Completed
 
 1. ✅ Set up Axum server with routing and state management
-2. ✅ Implement patient CRUD handlers (foundation with database TODO markers)
+2. ✅ Implement worker CRUD handlers (foundation with database TODO markers)
 3. ✅ Add search endpoints with fuzzy matching support
-4. ✅ Add patient matching endpoints with blocking strategy
+4. ✅ Add worker matching endpoints with blocking strategy
 5. ✅ Implement error handling with structured responses
 6. ✅ Add CORS support for cross-origin requests
 7. ✅ Create health check endpoint with version information
@@ -27,10 +27,10 @@ pub struct AppState {
     /// Database connection pool
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
 
-    /// Search engine for patient lookups
+    /// Search engine for worker lookups
     pub search_engine: Arc<SearchEngine>,
 
-    /// Patient matcher for finding duplicates
+    /// Worker matcher for finding duplicates
     pub matcher: Arc<ProbabilisticMatcher>,
 
     /// Application configuration
@@ -39,12 +39,13 @@ pub struct AppState {
 ```
 
 **Key Features:**
+
 - Cloneable for Axum's `State` extractor
 - Arc-wrapped components for thread-safe sharing
 - Ready for database connection pooling
 - Integrates search engine and matcher from previous phases
 
-###  2. REST API Handlers (`src/api/rest/handlers.rs`)
+### 2. REST API Handlers (`src/api/rest/handlers.rs`)
 
 Implemented 7 HTTP endpoints across 324 lines:
 
@@ -54,7 +55,7 @@ Implemented 7 HTTP endpoints across 324 lines:
 pub async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "healthy".to_string(),
-        service: "master-patient-index".to_string(),
+        service: "master-worker-index".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
@@ -62,22 +63,24 @@ pub async fn health_check() -> impl IntoResponse {
 
 **Purpose:** Service health monitoring and version information
 
-#### b. Patient CRUD Operations
+#### b. Worker CRUD Operations
 
-**Create Patient**:
+**Create Worker**:
+
 ```rust
-pub async fn create_patient(
+pub async fn create_worker(
     State(_state): State<AppState>,
-    Json(payload): Json<Patient>,
+    Json(payload): Json<Worker>,
 ) -> impl IntoResponse {
     // TODO: Database integration
     (StatusCode::CREATED, Json(ApiResponse::success(payload)))
 }
 ```
 
-**Get Patient by ID**:
+**Get Worker by ID**:
+
 ```rust
-pub async fn get_patient(
+pub async fn get_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
 ) -> impl IntoResponse {
@@ -86,21 +89,23 @@ pub async fn get_patient(
 }
 ```
 
-**Update Patient**:
+**Update Worker**:
+
 ```rust
-pub async fn update_patient(
+pub async fn update_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
-    Json(_payload): Json<Patient>,
+    Json(_payload): Json<Worker>,
 ) -> impl IntoResponse {
     // TODO: Database update
     (StatusCode::NOT_IMPLEMENTED, Json(ApiResponse::<()>::error(...)))
 }
 ```
 
-**Delete Patient (Soft Delete)**:
+**Delete Worker (Soft Delete)**:
+
 ```rust
-pub async fn delete_patient(
+pub async fn delete_worker(
     State(_state): State<AppState>,
     Path(_id): Path<Uuid>,
 ) -> impl IntoResponse {
@@ -111,7 +116,7 @@ pub async fn delete_patient(
 
 **Note:** CRUD handlers have foundation in place with clear TODO markers for Phase 6 database integration.
 
-#### c. Patient Search
+#### c. Worker Search
 
 ```rust
 #[derive(Debug, Deserialize, ToSchema)]
@@ -123,23 +128,23 @@ pub struct SearchQuery {
     pub fuzzy: bool,
 }
 
-pub async fn search_patients(
+pub async fn search_workers(
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> impl IntoResponse {
     let limit = params.limit.min(100); // Cap at 100 results
 
-    let patient_ids = if params.fuzzy {
+    let worker_ids = if params.fuzzy {
         state.search_engine.fuzzy_search(&params.q, limit)
     } else {
         state.search_engine.search(&params.q, limit)
     };
 
-    match patient_ids {
+    match worker_ids {
         Ok(ids) => {
-            // TODO: Fetch full patient records from database
+            // TODO: Fetch full worker records from database
             let response = SearchResponse {
-                patients: vec![],
+                workers: vec![],
                 total: ids.len(),
                 query: params.q,
             };
@@ -157,31 +162,32 @@ pub async fn search_patients(
 ```
 
 **Features:**
+
 - Default limit of 10, max 100 results
 - Fuzzy search support via query parameter
 - Integration with Tantivy search engine from Phase 4
 - Proper error handling with typed responses
 
-#### d. Patient Matching
+#### d. Worker Matching
 
 ```rust
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MatchRequest {
     #[serde(flatten)]
-    pub patient: Patient,
+    pub worker: Worker,
     #[serde(default)]
     pub threshold: Option<f64>,
     #[serde(default = "default_match_limit")]
     pub limit: usize,
 }
 
-pub async fn match_patient(
+pub async fn match_worker(
     State(state): State<AppState>,
     Json(payload): Json<MatchRequest>,
 ) -> impl IntoResponse {
     // Use search engine for blocking
-    let family_name = &payload.patient.name.family;
-    let birth_year = payload.patient.birth_date.map(|d| d.year());
+    let family_name = &payload.worker.name.family;
+    let birth_year = payload.worker.birth_date.map(|d| d.year());
 
     let candidate_ids = state.search_engine
         .search_by_name_and_year(family_name, birth_year, 100);
@@ -207,6 +213,7 @@ pub async fn match_patient(
 ```
 
 **Features:**
+
 - Blocking strategy using search_by_name_and_year
 - Configurable match score threshold
 - Limit on number of matches returned
@@ -220,16 +227,16 @@ Created comprehensive routing with middleware:
 pub fn create_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/health", get(handlers::health_check))
-        .route("/patients", post(handlers::create_patient))
-        .route("/patients/:id", get(handlers::get_patient))
-        .route("/patients/:id", put(handlers::update_patient))
-        .route("/patients/:id", delete(handlers::delete_patient))
-        .route("/patients/search", get(handlers::search_patients))
-        .route("/patients/match", post(handlers::match_patient))
+        .route("/workers", post(handlers::create_worker))
+        .route("/workers/:id", get(handlers::get_worker))
+        .route("/workers/:id", put(handlers::update_worker))
+        .route("/workers/:id", delete(handlers::delete_worker))
+        .route("/workers/search", get(handlers::search_workers))
+        .route("/workers/match", post(handlers::match_worker))
         .with_state(state);
 
     Router::new()
-        .nest("/api/v1", api_routes)
+        .nest("/api", api_routes)
         .merge(SwaggerUi::new("/swagger-ui")
             .url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
@@ -237,7 +244,8 @@ pub fn create_router(state: AppState) -> Router {
 ```
 
 **Features:**
-- Versioned API under `/api/v1`
+
+- Versioned API under `/api`
 - RESTful route design
 - Swagger UI at `/swagger-ui`
 - OpenAPI spec at `/api-docs/openapi.json`
@@ -265,6 +273,7 @@ pub async fn serve(state: AppState) -> Result<()> {
 ```
 
 **Features:**
+
 - Configurable host and port from AppState
 - Informative logging with server URL
 - Async/await error propagation
@@ -301,17 +310,17 @@ Configured comprehensive OpenAPI spec:
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Master Patient Index API",
+        title = "Master Worker Index API",
         version = "0.1.0",
-        description = "RESTful API for patient identification and matching",
+        description = "RESTful API for worker identification and matching",
     ),
     components(
         schemas(
-            Patient,
+            Worker,
             HumanName,
             Organization,
             Identifier,
-            ApiResponse<Patient>,
+            ApiResponse<Worker>,
             ApiError,
             HealthResponse,
             SearchQuery,
@@ -322,9 +331,9 @@ Configured comprehensive OpenAPI spec:
     ),
     tags(
         (name = "health", description = "Health check endpoint"),
-        (name = "patients", description = "Patient management endpoints"),
-        (name = "search", description = "Patient search endpoints"),
-        (name = "matching", description = "Patient matching endpoints"),
+        (name = "workers", description = "Worker management endpoints"),
+        (name = "search", description = "Worker search endpoints"),
+        (name = "matching", description = "Worker matching endpoints"),
     )
 )]
 pub struct ApiDoc;
@@ -334,56 +343,60 @@ pub struct ApiDoc;
 
 ## API Endpoints
 
-### Base URL: `http://localhost:8080/api/v1`
+### Base URL: `http://localhost:8080/api`
 
-| Method | Endpoint | Description | Status |
-|--------|----------|-------------|--------|
-| GET | `/health` | Health check | ✅ Implemented |
-| POST | `/patients` | Create patient | 🟡 Foundation (TODO: DB) |
-| GET | `/patients/{id}` | Get patient by ID | 🟡 Foundation (TODO: DB) |
-| PUT | `/patients/{id}` | Update patient | 🟡 Foundation (TODO: DB) |
-| DELETE | `/patients/{id}` | Delete patient (soft) | 🟡 Foundation (TODO: DB) |
-| GET | `/patients/search` | Search patients | ✅ Implemented |
-| POST | `/patients/match` | Match patient | ✅ Implemented |
+| Method | Endpoint          | Description          | Status                   |
+| ------ | ----------------- | -------------------- | ------------------------ |
+| GET    | `/health`         | Health check         | ✅ Implemented           |
+| POST   | `/workers`        | Create worker        | 🟡 Foundation (TODO: DB) |
+| GET    | `/workers/{id}`   | Get worker by ID     | 🟡 Foundation (TODO: DB) |
+| PUT    | `/workers/{id}`   | Update worker        | 🟡 Foundation (TODO: DB) |
+| DELETE | `/workers/{id}`   | Delete worker (soft) | 🟡 Foundation (TODO: DB) |
+| GET    | `/workers/search` | Search workers       | ✅ Implemented           |
+| POST   | `/workers/match`  | Match worker         | ✅ Implemented           |
 
 ### Additional Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `/swagger-ui` | Interactive API documentation |
-| `/api-docs/openapi.json` | OpenAPI 3.0 specification |
+| Endpoint                 | Description                   |
+| ------------------------ | ----------------------------- |
+| `/swagger-ui`            | Interactive API documentation |
+| `/api-docs/openapi.json` | OpenAPI 3.0 specification     |
 
 ## Request/Response Examples
 
 ### Health Check
 
 **Request:**
+
 ```
-GET /api/v1/health
+GET /api/health
 ```
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
-  "service": "master-patient-index",
+  "service": "master-worker-index",
   "version": "0.1.0"
 }
 ```
 
-### Search Patients
+### Search Workers
 
 **Request:**
+
 ```
-GET /api/v1/patients/search?q=Smith&limit=10&fuzzy=true
+GET /api/workers/search?q=Smith&limit=10&fuzzy=true
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
   "data": {
-    "patients": [],
+    "workers": [],
     "total": 5,
     "query": "Smith"
   },
@@ -391,11 +404,12 @@ GET /api/v1/patients/search?q=Smith&limit=10&fuzzy=true
 }
 ```
 
-### Match Patient
+### Match Worker
 
 **Request:**
+
 ```
-POST /api/v1/patients/match
+POST /api/workers/match
 Content-Type: application/json
 
 {
@@ -410,6 +424,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -432,11 +447,13 @@ Content-Type: application/json
 ### Security Considerations
 
 **Implemented:**
+
 - CORS support (currently permissive for development)
 - Type-safe parameter extraction
 - Error messages don't leak internals (generic error codes)
 
 **TODO (Future Phases):**
+
 - Authentication and authorization (JWT tokens)
 - Rate limiting
 - Request size limits
@@ -449,15 +466,15 @@ Content-Type: application/json
 ### Current Integrations
 
 1. **Search Engine** (Phase 4): Direct integration for search and blocking
-2. **Patient Matcher** (Phase 3): Ready for find_matches integration
-3. **Models** (Phase 1): Uses Patient, HumanName, Identifier types
+2. **Worker Matcher** (Phase 3): Ready for find_matches integration
+3. **Models** (Phase 1): Uses Worker, HumanName, Identifier types
 4. **Error Handling** (Phase 1): Uses centralized Error enum
 
 ### Future Integrations (Next Phases)
 
 1. **Database** (Phase 2): Will use db_pool for CRUD operations
 2. **FHIR API** (Phase 6): FHIR resources conversion
-3. **Event Streaming** (Phase 9): Publish patient events after mutations
+3. **Event Streaming** (Phase 9): Publish worker events after mutations
 4. **Observability** (Phase 10): Request tracing, metrics
 
 ## File Summary
@@ -499,6 +516,7 @@ Content-Type: application/json
 ### State Management Pattern
 
 Used Axum's `State` extractor instead of global state:
+
 - Type-safe dependency injection
 - Testable (can create different states for tests)
 - No runtime overhead from Arc lookups
@@ -507,6 +525,7 @@ Used Axum's `State` extractor instead of global state:
 ### Error Handling Strategy
 
 Chose structured error responses over status codes alone:
+
 - Consistent error format across all endpoints
 - Error codes for programmatic handling
 - Human-readable messages
@@ -514,11 +533,12 @@ Chose structured error responses over status codes alone:
 
 ### Blocking Strategy for Matching
 
-Patient matching uses two-phase approach:
+Worker matching uses two-phase approach:
+
 1. **Phase 1**: Search engine blocks to ~100 candidates (fast)
 2. **Phase 2**: Sophisticated matching on small set (accurate)
 
-This scales to millions of patients without O(n) comparisons.
+This scales to millions of workers without O(n) comparisons.
 
 ## Testing Strategy
 
@@ -530,6 +550,7 @@ While no tests were added in this phase, the API is ready for:
 4. **Load Tests**: Concurrent request handling
 
 Example test structure for future:
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -541,7 +562,7 @@ mod tests {
     async fn test_health_check() {
         let app = create_test_router();
         let response = app
-            .oneshot(Request::builder().uri("/api/v1/health").body(Body::empty()).unwrap())
+            .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -561,11 +582,13 @@ mod tests {
 ### Scalability
 
 **Horizontal Scaling:**
+
 - Stateless handlers (except shared AppState)
 - Can run multiple instances behind load balancer
 - Database connection pooling ready
 
 **Vertical Scaling:**
+
 - Tokio's work-stealing scheduler uses all cores
 - Non-blocking I/O for high concurrency
 
@@ -574,7 +597,7 @@ mod tests {
 ### Phase 5 TODOs
 
 1. **Database Integration**: CRUD handlers need Diesel queries
-2. **Full Patient Retrieval**: Search returns IDs only, need DB fetch
+2. **Full Worker Retrieval**: Search returns IDs only, need DB fetch
 3. **Match Execution**: Need to call `matcher.find_matches()` after blocking
 4. **OpenAPI Path Docs**: Removed due to proc macro issues, need alternative
 5. **Authentication**: No auth implemented yet
@@ -588,7 +611,7 @@ mod tests {
 3. **Filtering**: Advanced filters beyond text search
 4. **Sorting**: Configurable sort orders
 5. **Batch Operations**: Bulk create/update endpoints
-6. **Async Events**: Webhooks for patient mutations
+6. **Async Events**: Webhooks for worker mutations
 7. **API Versioning**: Support v2 alongside v1
 
 ## Success Metrics
@@ -607,7 +630,7 @@ mod tests {
 
 **Phase 6: FHIR R5 Support** will implement:
 
-- FHIR Patient resource conversion (to/from internal Patient model)
+- FHIR Worker resource conversion (to/from internal Worker model)
 - FHIR search parameters mapping
 - FHIR Bundle support for batch operations
 - FHIR-compliant error responses (OperationOutcome)
@@ -615,16 +638,17 @@ mod tests {
 - FHIR validation using profiles
 
 The REST API from Phase 5 provides the foundation - Phase 6 will add FHIR-specific endpoints:
+
 ```
-GET  /fhir/Patient?name=Smith
-GET  /fhir/Patient/{id}
-POST /fhir/Patient
-PUT  /fhir/Patient/{id}
+GET  /fhir/Worker?name=Smith
+GET  /fhir/Worker/{id}
+POST /fhir/Worker
+PUT  /fhir/Worker/{id}
 ```
 
 ## Conclusion
 
-Phase 5 successfully delivered a production-ready REST API foundation for the Master Patient Index system. The Axum framework provides excellent performance, type safety, and developer ergonomics. All endpoints are implemented with proper error handling, CORS support, and OpenAPI documentation. The API integrates seamlessly with the search engine and patient matching algorithms from previous phases.
+Phase 5 successfully delivered a production-ready REST API foundation for the Master Worker Index system. The Axum framework provides excellent performance, type safety, and developer ergonomics. All endpoints are implemented with proper error handling, CORS support, and OpenAPI documentation. The API integrates seamlessly with the search engine and worker matching algorithms from previous phases.
 
 Key architectural decisions like state management, blocking strategy for matching, and structured error responses position the system for enterprise-scale deployments. The clear TODO markers in CRUD handlers provide a roadmap for Phase 6 database integration.
 

@@ -1,12 +1,11 @@
 //! FHIR R5 resource definitions
 
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDate;
 
-/// FHIR Patient resource (R5)
+/// FHIR Worker resource (R5)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FhirPatient {
+pub struct FhirWorker {
     pub resource_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -35,7 +34,7 @@ pub struct FhirPatient {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub photo: Option<Vec<FhirAttachment>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub link: Option<Vec<FhirPatientLink>>,
+    pub link: Option<Vec<FhirWorkerLink>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub managing_organization: Option<FhirReference>,
 }
@@ -150,10 +149,10 @@ pub struct FhirReference {
     pub display: Option<String>,
 }
 
-/// FHIR Patient Link
+/// FHIR Worker Link
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FhirPatientLink {
+pub struct FhirWorkerLink {
     pub other: FhirReference,
     pub type_: String,
 }
@@ -234,11 +233,11 @@ impl FhirOperationOutcome {
     }
 }
 
-impl FhirPatient {
-    /// Create a new minimal FHIR Patient
+impl FhirWorker {
+    /// Create a new minimal FHIR Worker
     pub fn new() -> Self {
         Self {
-            resource_type: "Patient".to_string(),
+            resource_type: "Worker".to_string(),
             id: None,
             meta: None,
             identifier: None,
@@ -258,7 +257,7 @@ impl FhirPatient {
     }
 }
 
-impl Default for FhirPatient {
+impl Default for FhirWorker {
     fn default() -> Self {
         Self::new()
     }

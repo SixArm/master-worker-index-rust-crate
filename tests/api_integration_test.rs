@@ -9,8 +9,8 @@ use axum::{
 use tower::ServiceExt; // for `oneshot` and `ready`
 use serde_json::json;
 
-use master_patient_index::{
-    models::Patient,
+use master_worker_index::{
+    models::Worker,
     api::ApiResponse,
 };
 
@@ -36,16 +36,16 @@ async fn test_health_check() {
     let body_str = String::from_utf8(body.to_vec()).unwrap();
 
     assert!(body_str.contains("healthy"));
-    assert!(body_str.contains("master-patient-index"));
+    assert!(body_str.contains("master-worker-index"));
 }
 
 #[tokio::test]
-async fn test_create_patient() {
+async fn test_create_worker() {
     let app = common::create_test_router();
 
-    let family_name = common::unique_patient_name("Create");
+    let family_name = common::unique_worker_name("Create");
 
-    let patient_json = json!({
+    let worker_json = json!({
         "id": "00000000-0000-0000-0000-000000000000",
         "name": {
             "use": "official",
@@ -60,9 +60,9 @@ async fn test_create_patient() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/patients")
+                .uri("/api/v1/workers")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient_json).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker_json).unwrap()))
                 .unwrap(),
         )
         .await
@@ -74,23 +74,23 @@ async fn test_create_patient() {
         .await
         .unwrap();
 
-    let api_response: ApiResponse<Patient> = serde_json::from_slice(&body).unwrap();
+    let api_response: ApiResponse<Worker> = serde_json::from_slice(&body).unwrap();
     assert!(api_response.success);
 
-    let patient = api_response.data.unwrap();
-    assert_eq!(patient.name.family, family_name);
-    assert_eq!(patient.name.given, vec!["Integration", "Test"]);
-    assert!(patient.id.to_string() != "00000000-0000-0000-0000-000000000000");
+    let worker = api_response.data.unwrap();
+    assert_eq!(worker.name.family, family_name);
+    assert_eq!(worker.name.given, vec!["Integration", "Test"]);
+    assert!(worker.id.to_string() != "00000000-0000-0000-0000-000000000000");
 }
 
 #[tokio::test]
-async fn test_create_and_get_patient() {
+async fn test_create_and_get_worker() {
     let app = common::create_test_router();
 
-    let family_name = common::unique_patient_name("CreateGet");
+    let family_name = common::unique_worker_name("CreateGet");
 
-    // Create patient
-    let patient_json = json!({
+    // Create worker
+    let worker_json = json!({
         "id": "00000000-0000-0000-0000-000000000000",
         "name": {
             "use": "official",
@@ -106,9 +106,9 @@ async fn test_create_and_get_patient() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/patients")
+                .uri("/api/v1/workers")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient_json).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker_json).unwrap()))
                 .unwrap(),
         )
         .await
@@ -120,15 +120,15 @@ async fn test_create_and_get_patient() {
         .await
         .unwrap();
 
-    let create_api_response: ApiResponse<Patient> = serde_json::from_slice(&create_body).unwrap();
-    let created_patient = create_api_response.data.unwrap();
-    let patient_id = created_patient.id;
+    let create_api_response: ApiResponse<Worker> = serde_json::from_slice(&create_body).unwrap();
+    let created_worker = create_api_response.data.unwrap();
+    let worker_id = created_worker.id;
 
-    // Get patient by ID
+    // Get worker by ID
     let get_response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/v1/patients/{}", patient_id))
+                .uri(&format!("/api/v1/workers/{}", worker_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -141,22 +141,22 @@ async fn test_create_and_get_patient() {
         .await
         .unwrap();
 
-    let get_api_response: ApiResponse<Patient> = serde_json::from_slice(&get_body).unwrap();
+    let get_api_response: ApiResponse<Worker> = serde_json::from_slice(&get_body).unwrap();
     assert!(get_api_response.success);
 
-    let retrieved_patient = get_api_response.data.unwrap();
-    assert_eq!(retrieved_patient.id, patient_id);
-    assert_eq!(retrieved_patient.name.family, family_name);
+    let retrieved_worker = get_api_response.data.unwrap();
+    assert_eq!(retrieved_worker.id, worker_id);
+    assert_eq!(retrieved_worker.name.family, family_name);
 }
 
 #[tokio::test]
-async fn test_update_patient() {
+async fn test_update_worker() {
     let app = common::create_test_router();
 
-    let family_name = common::unique_patient_name("Update");
+    let family_name = common::unique_worker_name("Update");
 
-    // Create patient
-    let patient_json = json!({
+    // Create worker
+    let worker_json = json!({
         "id": "00000000-0000-0000-0000-000000000000",
         "name": {
             "use": "official",
@@ -172,9 +172,9 @@ async fn test_update_patient() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/patients")
+                .uri("/api/v1/workers")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient_json).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker_json).unwrap()))
                 .unwrap(),
         )
         .await
@@ -184,19 +184,19 @@ async fn test_update_patient() {
         .await
         .unwrap();
 
-    let create_api_response: ApiResponse<Patient> = serde_json::from_slice(&create_body).unwrap();
-    let mut patient = create_api_response.data.unwrap();
+    let create_api_response: ApiResponse<Worker> = serde_json::from_slice(&create_body).unwrap();
+    let mut worker = create_api_response.data.unwrap();
 
-    // Update patient
-    patient.name.given = vec!["Update".to_string(), "Modified".to_string()];
+    // Update worker
+    worker.name.given = vec!["Update".to_string(), "Modified".to_string()];
 
     let update_response = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(&format!("/api/v1/patients/{}", patient.id))
+                .uri(&format!("/api/v1/workers/{}", worker.id))
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker).unwrap()))
                 .unwrap(),
         )
         .await
@@ -208,20 +208,20 @@ async fn test_update_patient() {
         .await
         .unwrap();
 
-    let update_api_response: ApiResponse<Patient> = serde_json::from_slice(&update_body).unwrap();
-    let updated_patient = update_api_response.data.unwrap();
+    let update_api_response: ApiResponse<Worker> = serde_json::from_slice(&update_body).unwrap();
+    let updated_worker = update_api_response.data.unwrap();
 
-    assert_eq!(updated_patient.name.given, vec!["Update", "Modified"]);
+    assert_eq!(updated_worker.name.given, vec!["Update", "Modified"]);
 }
 
 #[tokio::test]
-async fn test_delete_patient() {
+async fn test_delete_worker() {
     let app = common::create_test_router();
 
-    let family_name = common::unique_patient_name("Delete");
+    let family_name = common::unique_worker_name("Delete");
 
-    // Create patient
-    let patient_json = json!({
+    // Create worker
+    let worker_json = json!({
         "id": "00000000-0000-0000-0000-000000000000",
         "name": {
             "use": "official",
@@ -237,9 +237,9 @@ async fn test_delete_patient() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/patients")
+                .uri("/api/v1/workers")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient_json).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker_json).unwrap()))
                 .unwrap(),
         )
         .await
@@ -249,16 +249,16 @@ async fn test_delete_patient() {
         .await
         .unwrap();
 
-    let create_api_response: ApiResponse<Patient> = serde_json::from_slice(&create_body).unwrap();
-    let patient = create_api_response.data.unwrap();
+    let create_api_response: ApiResponse<Worker> = serde_json::from_slice(&create_body).unwrap();
+    let worker = create_api_response.data.unwrap();
 
-    // Delete patient
+    // Delete worker
     let delete_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/api/v1/patients/{}", patient.id))
+                .uri(&format!("/api/v1/workers/{}", worker.id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -267,29 +267,29 @@ async fn test_delete_patient() {
 
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
-    // Try to get deleted patient - should return None (or 404 depending on implementation)
+    // Try to get deleted worker - should return None (or 404 depending on implementation)
     let get_response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/v1/patients/{}", patient.id))
+                .uri(&format!("/api/v1/workers/{}", worker.id))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // Soft delete means patient is not returned
+    // Soft delete means worker is not returned
     assert_eq!(get_response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn test_search_patients() {
+async fn test_search_workers() {
     let app = common::create_test_router();
 
-    let family_name = common::unique_patient_name("Search");
+    let family_name = common::unique_worker_name("Search");
 
-    // Create a patient to search for
-    let patient_json = json!({
+    // Create a worker to search for
+    let worker_json = json!({
         "id": "00000000-0000-0000-0000-000000000000",
         "name": {
             "use": "official",
@@ -305,9 +305,9 @@ async fn test_search_patients() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/patients")
+                .uri("/api/v1/workers")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&patient_json).unwrap()))
+                .body(Body::from(serde_json::to_vec(&worker_json).unwrap()))
                 .unwrap(),
         )
         .await
@@ -318,11 +318,11 @@ async fn test_search_patients() {
     // Give search engine time to index (in production this would be async)
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Search for the patient
+    // Search for the worker
     let search_response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/v1/patients/search?q={}&limit=10", family_name))
+                .uri(&format!("/api/v1/workers/search?q={}&limit=10", family_name))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -342,13 +342,13 @@ async fn test_search_patients() {
 }
 
 #[tokio::test]
-async fn test_get_patient_not_found() {
+async fn test_get_worker_not_found() {
     let app = common::create_test_router();
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/v1/patients/00000000-0000-0000-0000-000000000001")
+                .uri("/api/v1/workers/00000000-0000-0000-0000-000000000001")
                 .body(Body::empty())
                 .unwrap(),
         )

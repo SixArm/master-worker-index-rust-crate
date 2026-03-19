@@ -2,7 +2,7 @@
 
 ## Overview
 
-This phase completes the REST API implementation for the Master Patient Index (MPI), adding comprehensive endpoints for patient management, search, matching, and audit log queries. The implementation includes full OpenAPI/Swagger documentation, making the API self-documenting and easy to integrate with external systems.
+This phase completes the REST API implementation for the Master Worker Index (MPI), adding comprehensive endpoints for worker management, search, matching, and audit log queries. The implementation includes full OpenAPI/Swagger documentation, making the API self-documenting and easy to integrate with external systems.
 
 ## Task Description
 
@@ -38,10 +38,10 @@ Complete the REST API layer by:
 
 The REST API serves as the primary interface for:
 
-- **Integration**: External systems (EHR, billing, scheduling) access patient data
-- **User Interfaces**: Web and mobile applications for patient management
-- **Analytics**: Data warehouses pulling patient demographics
-- **Interoperability**: FHIR-compliant systems querying patient records
+- **Integration**: External systems (EHR, billing, scheduling) access worker data
+- **User Interfaces**: Web and mobile applications for worker management
+- **Analytics**: Data warehouses pulling worker demographics
+- **Interoperability**: FHIR-compliant systems querying worker records
 
 ### Audit Transparency
 
@@ -71,54 +71,54 @@ Event publishing TODOs removed because events are now automatically published by
 
 ```rust
 // BEFORE (with TODO):
-pub async fn create_patient(...) -> impl IntoResponse {
-    match state.patient_repository.create(&payload) {
-        Ok(patient) => {
+pub async fn create_worker(...) -> impl IntoResponse {
+    match state.worker_repository.create(&payload) {
+        Ok(worker) => {
             // Index in search engine
-            if let Err(e) = state.search_engine.index_patient(&patient) {
-                tracing::warn!("Failed to index patient in search engine: {}", e);
+            if let Err(e) = state.search_engine.index_worker(&worker) {
+                tracing::warn!("Failed to index worker in search engine: {}", e);
             }
 
             // TODO: Publish event to stream  // <-- REMOVED
 
-            (StatusCode::CREATED, Json(ApiResponse::success(patient)))
+            (StatusCode::CREATED, Json(ApiResponse::success(worker)))
         }
         // ...
     }
 }
 
 // AFTER (clean):
-pub async fn create_patient(...) -> impl IntoResponse {
-    match state.patient_repository.create(&payload) {
-        Ok(patient) => {
+pub async fn create_worker(...) -> impl IntoResponse {
+    match state.worker_repository.create(&payload) {
+        Ok(worker) => {
             // Index in search engine
-            if let Err(e) = state.search_engine.index_patient(&patient) {
-                tracing::warn!("Failed to index patient in search engine: {}", e);
+            if let Err(e) = state.search_engine.index_worker(&worker) {
+                tracing::warn!("Failed to index worker in search engine: {}", e);
             }
 
-            (StatusCode::CREATED, Json(ApiResponse::success(patient)))
+            (StatusCode::CREATED, Json(ApiResponse::success(worker)))
         }
         // ...
     }
 }
 ```
 
-**Rationale**: Event publishing is now handled in `DieselPatientRepository` (Phase 8), so TODOs were misleading. Events are automatically published after successful database transactions.
+**Rationale**: Event publishing is now handled in `DieselWorkerRepository` (Phase 8), so TODOs were misleading. Events are automatically published after successful database transactions.
 
 ### 2. Search Index Deletion
 
 **Added Search Index Cleanup in Delete Handler:**
 
 ```rust
-pub async fn delete_patient(
+pub async fn delete_worker(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.patient_repository.delete(&id) {
+    match state.worker_repository.delete(&id) {
         Ok(()) => {
             // Remove from search index
-            if let Err(e) = state.search_engine.delete_patient(&id.to_string()) {
-                tracing::warn!("Failed to delete patient from search engine: {}", e);
+            if let Err(e) = state.search_engine.delete_worker(&id.to_string()) {
+                tracing::warn!("Failed to delete worker from search engine: {}", e);
             }
 
             (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::success(())))
@@ -126,7 +126,7 @@ pub async fn delete_patient(
         Err(e) => {
             let error = ApiResponse::<()>::error(
                 "DATABASE_ERROR",
-                format!("Failed to delete patient: {}", e)
+                format!("Failed to delete worker: {}", e)
             );
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error))
         }
@@ -135,28 +135,30 @@ pub async fn delete_patient(
 ```
 
 **Key Points**:
+
 - Deletion from search index happens AFTER database soft delete succeeds
 - Non-blocking: search index failures are logged but don't fail the request
 - UUID conversion: `id.to_string()` converts UUID to string for search engine API
 
 **Consistency**: Now all CRUD operations properly manage search index:
-- **Create**: Index patient after database insert
-- **Update**: Re-index patient after database update
+
+- **Create**: Index worker after database insert
+- **Update**: Re-index worker after database update
 - **Delete**: Remove from index after database soft delete
 
 ### 3. Audit Log Query Endpoints
 
 Added three new endpoints for querying audit logs:
 
-#### 3.1 Get Patient Audit Logs
+#### 3.1 Get Worker Audit Logs
 
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/patients/{id}/audit",
+    path = "/api/workers/{id}/audit",
     tag = "audit",
     params(
-        ("id" = Uuid, Path, description = "Patient UUID"),
+        ("id" = Uuid, Path, description = "Worker UUID"),
         AuditLogQuery
     ),
     responses(
@@ -164,14 +166,14 @@ Added three new endpoints for querying audit logs:
         (status = 500, description = "Database error")
     )
 )]
-pub async fn get_patient_audit_logs(
+pub async fn get_worker_audit_logs(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Query(params): Query<AuditLogQuery>,
 ) -> impl IntoResponse {
     let limit = params.limit.min(500);
 
-    match state.audit_log.get_logs_for_entity("patient", id, limit) {
+    match state.audit_log.get_logs_for_entity("worker", id, limit) {
         Ok(logs) => (StatusCode::OK, Json(ApiResponse::success(logs))),
         Err(e) => {
             let error = ApiResponse::<Vec<crate::db::models::DbAuditLog>>::error(
@@ -184,8 +186,8 @@ pub async fn get_patient_audit_logs(
 }
 ```
 
-**Usage**: `GET /api/v1/patients/{id}/audit?limit=100`
-**Purpose**: Retrieve complete change history for a specific patient
+**Usage**: `GET /api/workers/{id}/audit?limit=100`
+**Purpose**: Retrieve complete change history for a specific worker
 **Limit**: Configurable up to 500 records (default: 50)
 
 #### 3.2 Get Recent Audit Logs
@@ -193,7 +195,7 @@ pub async fn get_patient_audit_logs(
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/audit/recent",
+    path = "/api/audit/recent",
     tag = "audit",
     params(AuditLogQuery),
     responses(
@@ -220,7 +222,7 @@ pub async fn get_recent_audit_logs(
 }
 ```
 
-**Usage**: `GET /api/v1/audit/recent?limit=200`
+**Usage**: `GET /api/audit/recent?limit=200`
 **Purpose**: System-wide recent activity monitoring
 **Use Cases**: Dashboards, activity feeds, anomaly detection
 
@@ -229,7 +231,7 @@ pub async fn get_recent_audit_logs(
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/audit/user",
+    path = "/api/audit/user",
     tag = "audit",
     params(UserAuditLogQuery),
     responses(
@@ -256,7 +258,7 @@ pub async fn get_user_audit_logs(
 }
 ```
 
-**Usage**: `GET /api/v1/audit/user?user_id=johndoe&limit=50`
+**Usage**: `GET /api/audit/user?user_id=johndoe&limit=50`
 **Purpose**: Track actions by specific users
 **Use Cases**: User activity reports, training, compliance audits
 
@@ -297,7 +299,7 @@ Added comprehensive `#[utoipa::path]` annotations to all handlers:
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/health",
+    path = "/api/health",
     tag = "health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
@@ -308,44 +310,44 @@ pub async fn health_check() -> impl IntoResponse {
 }
 ```
 
-#### Example: Create Patient
+#### Example: Create Worker
 
 ```rust
 #[utoipa::path(
     post,
-    path = "/api/v1/patients",
-    tag = "patients",
-    request_body = Patient,
+    path = "/api/workers",
+    tag = "workers",
+    request_body = Worker,
     responses(
-        (status = 201, description = "Patient created successfully"),
+        (status = 201, description = "Worker created successfully"),
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn create_patient(
+pub async fn create_worker(
     State(state): State<AppState>,
-    Json(mut payload): Json<Patient>,
+    Json(mut payload): Json<Worker>,
 ) -> impl IntoResponse {
     // ...
 }
 ```
 
-#### Example: Get Patient
+#### Example: Get Worker
 
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/patients/{id}",
-    tag = "patients",
+    path = "/api/workers/{id}",
+    tag = "workers",
     params(
-        ("id" = Uuid, Path, description = "Patient UUID")
+        ("id" = Uuid, Path, description = "Worker UUID")
     ),
     responses(
-        (status = 200, description = "Patient found"),
-        (status = 404, description = "Patient not found"),
+        (status = 200, description = "Worker found"),
+        (status = 404, description = "Worker not found"),
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_patient(
+pub async fn get_worker(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
@@ -353,12 +355,12 @@ pub async fn get_patient(
 }
 ```
 
-#### Example: Search Patients
+#### Example: Search Workers
 
 ```rust
 #[utoipa::path(
     get,
-    path = "/api/v1/patients/search",
+    path = "/api/workers/search",
     tag = "search",
     params(SearchQuery),
     responses(
@@ -366,7 +368,7 @@ pub async fn get_patient(
         (status = 500, description = "Search error")
     )
 )]
-pub async fn search_patients(
+pub async fn search_workers(
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> impl IntoResponse {
@@ -375,16 +377,17 @@ pub async fn search_patients(
 ```
 
 **Complete Coverage**: All 10 endpoints now have OpenAPI annotations:
-1. `GET /api/v1/health` - Health check
-2. `POST /api/v1/patients` - Create patient
-3. `GET /api/v1/patients/{id}` - Get patient
-4. `PUT /api/v1/patients/{id}` - Update patient
-5. `DELETE /api/v1/patients/{id}` - Delete patient
-6. `GET /api/v1/patients/search` - Search patients
-7. `POST /api/v1/patients/match` - Match patient
-8. `GET /api/v1/patients/{id}/audit` - Get patient audit logs
-9. `GET /api/v1/audit/recent` - Get recent audit logs
-10. `GET /api/v1/audit/user` - Get user audit logs
+
+1. `GET /api/health` - Health check
+2. `POST /api/workers` - Create worker
+3. `GET /api/workers/{id}` - Get worker
+4. `PUT /api/workers/{id}` - Update worker
+5. `DELETE /api/workers/{id}` - Delete worker
+6. `GET /api/workers/search` - Search workers
+7. `POST /api/workers/match` - Match worker
+8. `GET /api/workers/{id}/audit` - Get worker audit logs
+9. `GET /api/audit/recent` - Get recent audit logs
+10. `GET /api/audit/user` - Get user audit logs
 
 ### 5. OpenAPI Schema Registration
 
@@ -394,9 +397,9 @@ Updated `src/api/rest/mod.rs` to register all paths and schemas:
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Master Patient Index API",
+        title = "Master Worker Index API",
         version = "0.1.0",
-        description = "RESTful API for patient identification and matching",
+        description = "RESTful API for worker identification and matching",
         contact(
             name = "MPI Development Team",
             email = "support@example.com"
@@ -404,29 +407,29 @@ Updated `src/api/rest/mod.rs` to register all paths and schemas:
     ),
     paths(
         handlers::health_check,
-        handlers::create_patient,
-        handlers::get_patient,
-        handlers::update_patient,
-        handlers::delete_patient,
-        handlers::search_patients,
-        handlers::match_patient,
-        handlers::get_patient_audit_logs,
+        handlers::create_worker,
+        handlers::get_worker,
+        handlers::update_worker,
+        handlers::delete_worker,
+        handlers::search_workers,
+        handlers::match_worker,
+        handlers::get_worker_audit_logs,
         handlers::get_recent_audit_logs,
         handlers::get_user_audit_logs,
     ),
     components(
         schemas(
-            crate::models::Patient,
-            crate::models::patient::HumanName,
-            crate::models::patient::NameUse,
+            crate::models::Worker,
+            crate::models::worker::HumanName,
+            crate::models::worker::NameUse,
             crate::models::Organization,
             crate::models::Identifier,
             crate::models::identifier::IdentifierType,
             crate::models::identifier::IdentifierUse,
-            crate::api::ApiResponse::<crate::models::Patient>,
+            crate::api::ApiResponse::<crate::models::Worker>,
             crate::api::ApiError,
             handlers::HealthResponse,
-            handlers::CreatePatientRequest,
+            handlers::CreateWorkerRequest,
             handlers::SearchQuery,
             handlers::SearchResponse,
             handlers::MatchRequest,
@@ -438,9 +441,9 @@ Updated `src/api/rest/mod.rs` to register all paths and schemas:
     ),
     tags(
         (name = "health", description = "Health check endpoint"),
-        (name = "patients", description = "Patient management endpoints"),
-        (name = "search", description = "Patient search endpoints"),
-        (name = "matching", description = "Patient matching endpoints"),
+        (name = "workers", description = "Worker management endpoints"),
+        (name = "search", description = "Worker search endpoints"),
+        (name = "matching", description = "Worker matching endpoints"),
         (name = "audit", description = "Audit log query endpoints"),
     )
 )]
@@ -459,19 +462,19 @@ Updated routes to include new audit endpoints:
 pub fn create_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/health", get(handlers::health_check))
-        .route("/patients", post(handlers::create_patient))
-        .route("/patients/:id", get(handlers::get_patient))
-        .route("/patients/:id", put(handlers::update_patient))
-        .route("/patients/:id", delete(handlers::delete_patient))
-        .route("/patients/search", get(handlers::search_patients))
-        .route("/patients/match", post(handlers::match_patient))
-        .route("/patients/:id/audit", get(handlers::get_patient_audit_logs))
+        .route("/workers", post(handlers::create_worker))
+        .route("/workers/:id", get(handlers::get_worker))
+        .route("/workers/:id", put(handlers::update_worker))
+        .route("/workers/:id", delete(handlers::delete_worker))
+        .route("/workers/search", get(handlers::search_workers))
+        .route("/workers/match", post(handlers::match_worker))
+        .route("/workers/:id/audit", get(handlers::get_worker_audit_logs))
         .route("/audit/recent", get(handlers::get_recent_audit_logs))
         .route("/audit/user", get(handlers::get_user_audit_logs))
         .with_state(state);
 
     Router::new()
-        .nest("/api/v1", api_routes)
+        .nest("/api", api_routes)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
 }
@@ -485,26 +488,27 @@ pub fn create_router(state: AppState) -> Router {
 
 ### Endpoint Summary
 
-| Method | Path | Description | Tag |
-|--------|------|-------------|-----|
-| GET | /api/v1/health | Health check | health |
-| POST | /api/v1/patients | Create patient | patients |
-| GET | /api/v1/patients/{id} | Get patient by ID | patients |
-| PUT | /api/v1/patients/{id} | Update patient | patients |
-| DELETE | /api/v1/patients/{id} | Delete patient (soft) | patients |
-| GET | /api/v1/patients/search | Search patients | search |
-| POST | /api/v1/patients/match | Match patient | matching |
-| GET | /api/v1/patients/{id}/audit | Get patient audit logs | audit |
-| GET | /api/v1/audit/recent | Get recent audit logs | audit |
-| GET | /api/v1/audit/user | Get user audit logs | audit |
+| Method | Path                       | Description           | Tag      |
+| ------ | -------------------------- | --------------------- | -------- |
+| GET    | /api/health             | Health check          | health   |
+| POST   | /api/workers            | Create worker         | workers  |
+| GET    | /api/workers/{id}       | Get worker by ID      | workers  |
+| PUT    | /api/workers/{id}       | Update worker         | workers  |
+| DELETE | /api/workers/{id}       | Delete worker (soft)  | workers  |
+| GET    | /api/workers/search     | Search workers        | search   |
+| POST   | /api/workers/match      | Match worker          | matching |
+| GET    | /api/workers/{id}/audit | Get worker audit logs | audit    |
+| GET    | /api/audit/recent       | Get recent audit logs | audit    |
+| GET    | /api/audit/user         | Get user audit logs   | audit    |
 
 ### Request/Response Examples
 
-#### Create Patient
+#### Create Worker
 
 **Request**:
+
 ```http
-POST /api/v1/patients
+POST /api/workers
 Content-Type: application/json
 
 {
@@ -520,6 +524,7 @@ Content-Type: application/json
 ```
 
 **Response (201 Created)**:
+
 ```json
 {
   "success": true,
@@ -537,21 +542,23 @@ Content-Type: application/json
 }
 ```
 
-#### Search Patients
+#### Search Workers
 
 **Request**:
+
 ```http
-GET /api/v1/patients/search?q=Smith&fuzzy=true&limit=10
+GET /api/workers/search?q=Smith&fuzzy=true&limit=10
 ```
 
 **Response (200 OK)**:
+
 ```json
 {
   "success": true,
   "data": {
     "query": "Smith",
     "total": 2,
-    "patients": [
+    "workers": [
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": {
@@ -573,15 +580,16 @@ GET /api/v1/patients/search?q=Smith&fuzzy=true&limit=10
 }
 ```
 
-#### Match Patient
+#### Match Worker
 
 **Request**:
+
 ```http
-POST /api/v1/patients/match
+POST /api/workers/match
 Content-Type: application/json
 
 {
-  "patient": {
+  "worker": {
     "name": {
       "family": "Smyth",
       "given": ["Jon"]
@@ -595,6 +603,7 @@ Content-Type: application/json
 ```
 
 **Response (200 OK)**:
+
 ```json
 {
   "success": true,
@@ -602,7 +611,7 @@ Content-Type: application/json
     "total": 1,
     "matches": [
       {
-        "patient": {
+        "worker": {
           "id": "550e8400-e29b-41d4-a716-446655440000",
           "name": {
             "family": "Smith",
@@ -618,14 +627,16 @@ Content-Type: application/json
 }
 ```
 
-#### Get Patient Audit Logs
+#### Get Worker Audit Logs
 
 **Request**:
+
 ```http
-GET /api/v1/patients/550e8400-e29b-41d4-a716-446655440000/audit?limit=10
+GET /api/workers/550e8400-e29b-41d4-a716-446655440000/audit?limit=10
 ```
 
 **Response (200 OK)**:
+
 ```json
 {
   "success": true,
@@ -634,7 +645,7 @@ GET /api/v1/patients/550e8400-e29b-41d4-a716-446655440000/audit?limit=10
       "id": "770e8400-e29b-41d4-a716-446655440002",
       "user_id": "system",
       "action": "UPDATE",
-      "entity_type": "patient",
+      "entity_type": "worker",
       "entity_id": "550e8400-e29b-41d4-a716-446655440000",
       "old_values": {
         "name": {
@@ -656,7 +667,7 @@ GET /api/v1/patients/550e8400-e29b-41d4-a716-446655440000/audit?limit=10
       "id": "880e8400-e29b-41d4-a716-446655440003",
       "user_id": "system",
       "action": "CREATE",
-      "entity_type": "patient",
+      "entity_type": "worker",
       "entity_id": "550e8400-e29b-41d4-a716-446655440000",
       "old_values": null,
       "new_values": {
@@ -708,15 +719,17 @@ All existing tests continue to pass, confirming backward compatibility.
 **Decision**: Search index failures are logged but don't fail HTTP requests.
 
 **Rationale**:
+
 - Database is source of truth; search index is a cache
-- Patient create/update/delete should succeed even if search indexing fails
+- Worker create/update/delete should succeed even if search indexing fails
 - Failures are logged with `tracing::warn!` for operational visibility
 - Search index can be rebuilt from database if corruption occurs
 
 **Code Pattern**:
+
 ```rust
-if let Err(e) = state.search_engine.index_patient(&patient) {
-    tracing::warn!("Failed to index patient in search engine: {}", e);
+if let Err(e) = state.search_engine.index_worker(&worker) {
+    tracing::warn!("Failed to index worker in search engine: {}", e);
 }
 // Continue processing - don't fail the request
 ```
@@ -726,29 +739,32 @@ if let Err(e) = state.search_engine.index_patient(&patient) {
 **Decision**: Maximum 500 audit logs per query, default 50.
 
 **Rationale**:
+
 - Prevents excessive database queries that could impact performance
 - Encourages pagination for large result sets
 - 500 is sufficient for most debugging/compliance scenarios
 - Default of 50 balances usability and performance
 
 **Implementation**:
+
 ```rust
 let limit = params.limit.min(500);  // Hard cap at 500
 ```
 
 **Future**: Add cursor-based pagination for accessing full audit history.
 
-### 3. Separate Audit Endpoints vs. Embedded in Patient
+### 3. Separate Audit Endpoints vs. Embedded in Worker
 
 **Decision**: Audit logs accessible via separate `/audit/*` endpoints.
 
 **Rationale**:
-- **Separation of Concerns**: Patient endpoints return patient data, audit endpoints return audit data
-- **Performance**: Patient queries don't carry audit log overhead
-- **Access Control**: Easier to apply different permissions (future: audit endpoints require admin role)
-- **Flexibility**: System-wide and user-specific audit queries don't fit patient resource model
 
-**Alternative Considered**: Embed audit logs in `GET /patients/{id}?include=audit`
+- **Separation of Concerns**: Worker endpoints return worker data, audit endpoints return audit data
+- **Performance**: Worker queries don't carry audit log overhead
+- **Access Control**: Easier to apply different permissions (future: audit endpoints require admin role)
+- **Flexibility**: System-wide and user-specific audit queries don't fit worker resource model
+
+**Alternative Considered**: Embed audit logs in `GET /workers/{id}?include=audit`
 **Trade-off**: Cleaner REST design vs. potential over-fetching
 
 ### 4. OpenAPI IntoParams Derive
@@ -756,12 +772,14 @@ let limit = params.limit.min(500);  // Hard cap at 500
 **Decision**: Use `#[derive(utoipa::IntoParams)]` for query parameter structs.
 
 **Rationale**:
+
 - Automatic OpenAPI parameter documentation
 - Type-safe query parameter parsing
 - Swagger UI generates correct input fields
 - Reduces manual documentation maintenance
 
 **Example**:
+
 ```rust
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct SearchQuery {
@@ -772,6 +790,7 @@ pub struct SearchQuery {
 ```
 
 Generates OpenAPI spec:
+
 ```yaml
 parameters:
   - name: q
@@ -796,9 +815,10 @@ parameters:
 **Decision**: Convert UUID to string when calling search engine: `id.to_string()`.
 
 **Rationale**:
+
 - Search engine API expects string IDs (Tantivy stores as text)
 - UUID type in Rust, string in search index
-- Consistent with how IDs are indexed in `index_patient()`
+- Consistent with how IDs are indexed in `index_worker()`
 
 **Note**: Consider updating search engine API to accept UUID directly for type safety.
 
@@ -806,33 +826,33 @@ parameters:
 
 ### Additional Endpoints
 
-1. **Merge Patients**: `POST /api/v1/patients/{source_id}/merge/{target_id}`
-   - Combine two patient records (duplicate resolution)
+1. **Merge Workers**: `POST /api/workers/{source_id}/merge/{target_id}`
+   - Combine two worker records (duplicate resolution)
    - Requires: Repository merge method, merge event, audit logging
 
-2. **Link/Unlink Patients**: `POST/DELETE /api/v1/patients/{id}/links/{linked_id}`
-   - Create/remove patient linkages across systems
+2. **Link/Unlink Workers**: `POST/DELETE /api/workers/{id}/links/{linked_id}`
+   - Create/remove worker linkages across systems
    - Requires: Link repository methods, link events
 
-3. **Bulk Operations**: `POST /api/v1/patients/bulk`
-   - Create/update multiple patients in one request
+3. **Bulk Operations**: `POST /api/workers/bulk`
+   - Create/update multiple workers in one request
    - Useful for migrations and integrations
 
-4. **Advanced Search**: `POST /api/v1/patients/search`
+4. **Advanced Search**: `POST /api/workers/search`
    - Complex queries with multiple criteria
    - Filter by demographics, identifiers, dates
 
-5. **Statistics**: `GET /api/v1/statistics`
-   - Patient count, growth rate, match quality metrics
+5. **Statistics**: `GET /api/statistics`
+   - Worker count, growth rate, match quality metrics
    - Dashboard integration
 
 ### Authentication & Authorization
 
 1. **JWT Authentication**: Require bearer tokens for all endpoints (except health check)
 2. **Role-Based Access Control (RBAC)**:
-   - `patient:read` - View patients
-   - `patient:write` - Create/update patients
-   - `patient:delete` - Delete patients
+   - `worker:read` - View workers
+   - `worker:write` - Create/update workers
+   - `worker:delete` - Delete workers
    - `audit:read` - View audit logs
 3. **API Key Authentication**: For system-to-system integration
 4. **OAuth 2.0**: Integration with enterprise identity providers
@@ -848,11 +868,11 @@ parameters:
 
 1. **Cursor-Based Pagination**: For audit logs and search results
    ```
-   GET /api/v1/audit/recent?limit=50&cursor=xyz123
+   GET /api/audit/recent?limit=50&cursor=xyz123
    ```
 2. **Page-Based Pagination**: Alternative for simpler use cases
    ```
-   GET /api/v1/patients/search?q=Smith&page=2&page_size=20
+   GET /api/workers/search?q=Smith&page=2&page_size=20
    ```
 3. **Link Headers**: RFC 5988 compliant pagination links
 
@@ -865,7 +885,7 @@ parameters:
 
 ### Performance Optimizations
 
-1. **Response Caching**: Cache patient records with TTL and cache invalidation
+1. **Response Caching**: Cache worker records with TTL and cache invalidation
 2. **Partial Responses**: Field selection (`?fields=id,name,birthDate`)
 3. **Compression**: Gzip/Brotli for large responses
 4. **HTTP/2**: Multiplexing for concurrent requests
@@ -879,7 +899,7 @@ parameters:
 
 ### API Versioning
 
-1. **URL Versioning**: Current `/api/v1`, future `/api/v2`
+1. **URL Versioning**: Current `/api`, future `/api/v2`
 2. **Header Versioning**: `Accept: application/vnd.mpi.v1+json`
 3. **Deprecation Policy**: Sunset header for deprecated endpoints
 4. **Changelog**: API changelog published in Swagger UI
@@ -902,7 +922,7 @@ parameters:
 
 - **Audit Logs Contain PHI**: Audit log endpoints need access control
 - **Response Filtering**: Consider redacting sensitive fields based on permissions
-- **Logging**: Ensure logs don't contain full patient records (PHI leakage)
+- **Logging**: Ensure logs don't contain full worker records (PHI leakage)
 
 ### CORS Policy
 
@@ -941,7 +961,7 @@ parameters:
 ### HL7 FHIR
 
 - ✓ **RESTful Design**: API follows REST principles similar to FHIR
-- ⏳ **FHIR Resources**: Future: Implement FHIR Patient resource endpoint
+- ⏳ **FHIR Resources**: Future: Implement FHIR Worker resource endpoint
 - ⏳ **FHIR Search**: Future: Support FHIR search parameters
 
 ## Operational Runbook
@@ -955,41 +975,45 @@ parameters:
 ### Testing Endpoints
 
 **Using Swagger UI**:
+
 1. Select endpoint
 2. Click "Try it out"
 3. Fill in parameters
 4. Click "Execute"
 
 **Using curl**:
+
 ```bash
 # Health check
-curl http://localhost:8080/api/v1/health
+curl http://localhost:8080/api/health
 
-# Create patient
-curl -X POST http://localhost:8080/api/v1/patients \
+# Create worker
+curl -X POST http://localhost:8080/api/workers \
   -H "Content-Type: application/json" \
   -d '{"name":{"family":"Smith","given":["John"]},"birth_date":"1980-01-15","gender":"male"}'
 
 # Search
-curl "http://localhost:8080/api/v1/patients/search?q=Smith&limit=10"
+curl "http://localhost:8080/api/workers/search?q=Smith&limit=10"
 
 # Get audit logs
-curl "http://localhost:8080/api/v1/audit/recent?limit=50"
+curl "http://localhost:8080/api/audit/recent?limit=50"
 ```
 
 ### Monitoring Endpoints
 
 **Key Metrics to Monitor**:
+
 - Health check: Should always return 200 OK
-- Create patient: p99 latency < 500ms
+- Create worker: p99 latency < 500ms
 - Search: p99 latency < 200ms
 - Audit queries: p99 latency < 300ms
 - Error rate: < 1% for all endpoints
 
 ### Troubleshooting
 
-**Symptom**: 500 errors on patient creation
+**Symptom**: 500 errors on worker creation
 **Check**:
+
 - Database connectivity: `psql` to connect
 - Database migrations: `diesel migration run`
 - Event publisher errors in logs
@@ -997,12 +1021,14 @@ curl "http://localhost:8080/api/v1/audit/recent?limit=50"
 
 **Symptom**: Search returns no results
 **Check**:
+
 - Search index exists: Check Tantivy directory
-- Patients indexed: Review create/update handler logs
+- Workers indexed: Review create/update handler logs
 - Query syntax: Test with simple queries first
 
 **Symptom**: Audit logs missing
 **Check**:
+
 - Database `audit_log` table exists
 - Repository has audit_log configured
 - Audit write failures in logs
@@ -1019,12 +1045,14 @@ Phase 9 completes the REST API implementation with:
 ✓ **Type Safety**: Axum + Serde for compile-time validation
 
 The API is now ready for:
+
 - Frontend integration (web/mobile applications)
 - System-to-system integration (EHR, billing, analytics)
 - Compliance audits (via audit log endpoints)
 - Developer onboarding (via Swagger documentation)
 
 Next phases could focus on:
+
 - **Phase 10**: Authentication & Authorization (JWT, RBAC)
 - **Phase 11**: Integration Tests (API endpoint testing)
 - **Phase 12**: Deployment (Docker, Kubernetes, CI/CD)

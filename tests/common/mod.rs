@@ -1,6 +1,6 @@
 //! Common test utilities for integration tests
 
-use master_patient_index::{
+use master_worker_index::{
     config::Config,
     db::create_pool,
     search::SearchEngine,
@@ -35,9 +35,9 @@ pub fn create_test_router() -> Router {
     create_router(state)
 }
 
-/// Create a unique test patient name to avoid conflicts
-pub fn unique_patient_name(suffix: &str) -> String {
+/// Create a unique test worker name to avoid conflicts
+pub fn unique_worker_name(suffix: &str) -> String {
     use chrono::Utc;
     let timestamp = Utc::now().timestamp_micros();
-    format!("TestPatient{}_{}", suffix, timestamp)
+    format!("TestWorker{}_{}", suffix, timestamp)
 }

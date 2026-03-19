@@ -1,14 +1,14 @@
 //! Event producer implementations
 
 use std::sync::{Arc, Mutex};
-use super::{EventProducer, PatientEvent};
+use super::{EventProducer, WorkerEvent};
 use crate::Result;
 
 /// In-memory event publisher for development/testing
 /// In production, replace with Kafka, NATS, or Fluvio
 #[derive(Clone)]
 pub struct InMemoryEventPublisher {
-    events: Arc<Mutex<Vec<PatientEvent>>>,
+    events: Arc<Mutex<Vec<WorkerEvent>>>,
 }
 
 impl InMemoryEventPublisher {
@@ -20,7 +20,7 @@ impl InMemoryEventPublisher {
     }
 
     /// Get all published events (for testing)
-    pub fn get_events(&self) -> Vec<PatientEvent> {
+    pub fn get_events(&self) -> Vec<WorkerEvent> {
         self.events.lock().unwrap().clone()
     }
 
@@ -42,18 +42,18 @@ impl Default for InMemoryEventPublisher {
 }
 
 impl EventProducer for InMemoryEventPublisher {
-    fn publish(&self, event: PatientEvent) -> Result<()> {
+    fn publish(&self, event: WorkerEvent) -> Result<()> {
         tracing::info!(
-            "Publishing event: {} for patient {}",
+            "Publishing event: {} for worker {}",
             match &event {
-                PatientEvent::Created { .. } => "Created",
-                PatientEvent::Updated { .. } => "Updated",
-                PatientEvent::Deleted { .. } => "Deleted",
-                PatientEvent::Merged { .. } => "Merged",
-                PatientEvent::Linked { .. } => "Linked",
-                PatientEvent::Unlinked { .. } => "Unlinked",
+                WorkerEvent::Created { .. } => "Created",
+                WorkerEvent::Updated { .. } => "Updated",
+                WorkerEvent::Deleted { .. } => "Deleted",
+                WorkerEvent::Merged { .. } => "Merged",
+                WorkerEvent::Linked { .. } => "Linked",
+                WorkerEvent::Unlinked { .. } => "Unlinked",
             },
-            event.patient_id()
+            event.worker_id()
         );
 
         self.events.lock().unwrap().push(event);
@@ -67,7 +67,7 @@ pub struct FluvioProducer {
 }
 
 impl EventProducer for FluvioProducer {
-    fn publish(&self, _event: PatientEvent) -> Result<()> {
+    fn publish(&self, _event: WorkerEvent) -> Result<()> {
         // TODO: Implement Fluvio event publishing
         todo!("Implement Fluvio event publishing")
     }

@@ -20,9 +20,9 @@ use crate::Result;
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Master Patient Index API",
+        title = "Master Worker Index API",
         version = "0.1.0",
-        description = "RESTful API for patient identification and matching",
+        description = "RESTful API for worker identification, matching, deduplication, and privacy",
         contact(
             name = "MPI Development Team",
             email = "support@example.com"
@@ -30,43 +30,65 @@ use crate::Result;
     ),
     paths(
         handlers::health_check,
-        handlers::create_patient,
-        handlers::get_patient,
-        handlers::update_patient,
-        handlers::delete_patient,
-        handlers::search_patients,
-        handlers::match_patient,
-        handlers::get_patient_audit_logs,
+        handlers::create_worker,
+        handlers::get_worker,
+        handlers::update_worker,
+        handlers::delete_worker,
+        handlers::search_workers,
+        handlers::match_worker,
+        handlers::check_duplicates,
+        handlers::merge_workers,
+        handlers::batch_deduplicate,
+        handlers::export_worker_data,
+        handlers::get_worker_masked,
+        handlers::get_worker_audit_logs,
         handlers::get_recent_audit_logs,
         handlers::get_user_audit_logs,
     ),
     components(
         schemas(
-            crate::models::Patient,
-            crate::models::patient::HumanName,
-            crate::models::patient::NameUse,
+            crate::models::Worker,
+            crate::models::worker::HumanName,
+            crate::models::worker::NameUse,
             crate::models::Organization,
             crate::models::Identifier,
             crate::models::identifier::IdentifierType,
             crate::models::identifier::IdentifierUse,
-            crate::api::ApiResponse::<crate::models::Patient>,
+            crate::models::IdentityDocument,
+            crate::models::DocumentType,
+            crate::models::EmergencyContact,
+            crate::models::MergeRequest,
+            crate::models::MergeResponse,
+            crate::models::MergeRecord,
+            crate::models::MergeStatus,
+            crate::models::BatchDeduplicationRequest,
+            crate::models::BatchDeduplicationResponse,
+            crate::models::ReviewQueueItem,
+            crate::models::ReviewStatus,
+            crate::models::Consent,
+            crate::models::ConsentType,
+            crate::models::ConsentStatus,
+            crate::api::ApiResponse::<crate::models::Worker>,
             crate::api::ApiError,
             handlers::HealthResponse,
-            handlers::CreatePatientRequest,
+            handlers::CreateWorkerRequest,
             handlers::SearchQuery,
             handlers::SearchResponse,
             handlers::MatchRequest,
             handlers::MatchResponse,
             handlers::MatchResultsResponse,
+            handlers::DuplicateCheckResponse,
             handlers::AuditLogQuery,
             handlers::UserAuditLogQuery,
         )
     ),
     tags(
         (name = "health", description = "Health check endpoint"),
-        (name = "patients", description = "Patient management endpoints"),
-        (name = "search", description = "Patient search endpoints"),
-        (name = "matching", description = "Patient matching endpoints"),
+        (name = "workers", description = "Worker management endpoints"),
+        (name = "search", description = "Worker search endpoints"),
+        (name = "matching", description = "Worker matching endpoints"),
+        (name = "deduplication", description = "Duplicate detection, review, and merge endpoints"),
+        (name = "privacy", description = "Data masking, export, and consent endpoints"),
         (name = "audit", description = "Audit log query endpoints"),
     )
 )]
@@ -75,14 +97,26 @@ pub struct ApiDoc;
 /// Create the REST API router with application state
 pub fn create_router(state: AppState) -> Router {
     let api_routes = Router::new()
+        // Health
         .route("/health", get(handlers::health_check))
-        .route("/patients", post(handlers::create_patient))
-        .route("/patients/:id", get(handlers::get_patient))
-        .route("/patients/:id", put(handlers::update_patient))
-        .route("/patients/:id", delete(handlers::delete_patient))
-        .route("/patients/search", get(handlers::search_patients))
-        .route("/patients/match", post(handlers::match_patient))
-        .route("/patients/:id/audit", get(handlers::get_patient_audit_logs))
+        // Worker CRUD
+        .route("/workers", post(handlers::create_worker))
+        .route("/workers/:id", get(handlers::get_worker))
+        .route("/workers/:id", put(handlers::update_worker))
+        .route("/workers/:id", delete(handlers::delete_worker))
+        // Search
+        .route("/workers/search", get(handlers::search_workers))
+        // Matching
+        .route("/workers/match", post(handlers::match_worker))
+        // Duplicate detection & deduplication
+        .route("/workers/check-duplicates", post(handlers::check_duplicates))
+        .route("/workers/merge", post(handlers::merge_workers))
+        .route("/workers/deduplicate", post(handlers::batch_deduplicate))
+        // Privacy
+        .route("/workers/:id/export", get(handlers::export_worker_data))
+        .route("/workers/:id/masked", get(handlers::get_worker_masked))
+        // Audit
+        .route("/workers/:id/audit", get(handlers::get_worker_audit_logs))
         .route("/audit/recent", get(handlers::get_recent_audit_logs))
         .route("/audit/user", get(handlers::get_user_audit_logs))
         .with_state(state);

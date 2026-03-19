@@ -1,6 +1,6 @@
 //! Event consumer implementation
 
-use super::{EventConsumer, PatientEvent};
+use super::{EventConsumer, WorkerEvent};
 use crate::Result;
 
 pub struct FluvioConsumer {
@@ -13,7 +13,7 @@ impl EventConsumer for FluvioConsumer {
         todo!("Implement Fluvio subscription")
     }
 
-    fn next_event(&mut self) -> Result<Option<PatientEvent>> {
+    fn next_event(&mut self) -> Result<Option<WorkerEvent>> {
         // TODO: Implement event consumption
         todo!("Implement event consumption")
     }

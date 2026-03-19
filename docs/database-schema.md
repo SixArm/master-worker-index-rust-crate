@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the PostgreSQL database schema for the Master Patient Index (MPI) system. The schema is designed to support millions of patient records with high performance, HIPAA compliance, and full audit trail capabilities.
+This document describes the PostgreSQL database schema for the Master Worker Index (MPI) system. The schema is designed to support millions of worker records with high performance, HIPAA compliance, and full audit trail capabilities.
 
 ## Design Principles
 
@@ -16,12 +16,12 @@ This document describes the PostgreSQL database schema for the Master Patient In
 
 ## Core Tables
 
-### patients
+### workers
 
-Primary patient record table.
+Primary worker record table.
 
 ```sql
-CREATE TABLE patients (
+CREATE TABLE workers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     active BOOLEAN NOT NULL DEFAULT true,
     gender VARCHAR(20) NOT NULL CHECK (gender IN ('male', 'female', 'other', 'unknown')),
@@ -43,22 +43,22 @@ CREATE TABLE patients (
     deleted_by VARCHAR(255),
 
     -- Indexes
-    INDEX idx_patients_birth_date (birth_date),
-    INDEX idx_patients_gender (gender),
-    INDEX idx_patients_active (active),
-    INDEX idx_patients_organization (managing_organization_id),
-    INDEX idx_patients_deleted_at (deleted_at)
+    INDEX idx_workers_birth_date (birth_date),
+    INDEX idx_workers_gender (gender),
+    INDEX idx_workers_active (active),
+    INDEX idx_workers_organization (managing_organization_id),
+    INDEX idx_workers_deleted_at (deleted_at)
 );
 ```
 
-### patient_names
+### worker_names
 
-Stores multiple names per patient (legal name, maiden name, aliases, etc.).
+Stores multiple names per worker (legal name, maiden name, aliases, etc.).
 
 ```sql
-CREATE TABLE patient_names (
+CREATE TABLE worker_names (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     use_type VARCHAR(20) CHECK (use_type IN ('usual', 'official', 'temp', 'nickname', 'anonymous', 'old', 'maiden')),
     family VARCHAR(255) NOT NULL,
     given TEXT[] NOT NULL DEFAULT '{}',  -- Array of given names
@@ -71,20 +71,20 @@ CREATE TABLE patient_names (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Indexes
-    INDEX idx_patient_names_patient_id (patient_id),
-    INDEX idx_patient_names_family (family),
-    INDEX idx_patient_names_is_primary (is_primary)
+    INDEX idx_worker_names_worker_id (worker_id),
+    INDEX idx_worker_names_family (family),
+    INDEX idx_worker_names_is_primary (is_primary)
 );
 ```
 
-### patient_identifiers
+### worker_identifiers
 
-Stores patient identifiers (MRN, SSN, driver's license, etc.).
+Stores worker identifiers (MRN, SSN, driver's license, etc.).
 
 ```sql
-CREATE TABLE patient_identifiers (
+CREATE TABLE worker_identifiers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     use_type VARCHAR(20) CHECK (use_type IN ('usual', 'official', 'temp', 'secondary', 'old')),
     identifier_type VARCHAR(10) NOT NULL CHECK (identifier_type IN ('MRN', 'SSN', 'DL', 'NPI', 'PPN', 'TAX', 'OTHER')),
     system VARCHAR(255) NOT NULL,  -- Namespace/system URI
@@ -99,21 +99,21 @@ CREATE TABLE patient_identifiers (
     UNIQUE(system, value),
 
     -- Indexes
-    INDEX idx_patient_identifiers_patient_id (patient_id),
-    INDEX idx_patient_identifiers_type (identifier_type),
-    INDEX idx_patient_identifiers_value (value),
-    INDEX idx_patient_identifiers_system_value (system, value)
+    INDEX idx_worker_identifiers_worker_id (worker_id),
+    INDEX idx_worker_identifiers_type (identifier_type),
+    INDEX idx_worker_identifiers_value (value),
+    INDEX idx_worker_identifiers_system_value (system, value)
 );
 ```
 
-### patient_addresses
+### worker_addresses
 
-Stores multiple addresses per patient.
+Stores multiple addresses per worker.
 
 ```sql
-CREATE TABLE patient_addresses (
+CREATE TABLE worker_addresses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     use_type VARCHAR(20) CHECK (use_type IN ('home', 'work', 'temp', 'old', 'billing')),
     line1 VARCHAR(255),
     line2 VARCHAR(255),
@@ -128,21 +128,21 @@ CREATE TABLE patient_addresses (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Indexes
-    INDEX idx_patient_addresses_patient_id (patient_id),
-    INDEX idx_patient_addresses_postal_code (postal_code),
-    INDEX idx_patient_addresses_city_state (city, state),
-    INDEX idx_patient_addresses_is_primary (is_primary)
+    INDEX idx_worker_addresses_worker_id (worker_id),
+    INDEX idx_worker_addresses_postal_code (postal_code),
+    INDEX idx_worker_addresses_city_state (city, state),
+    INDEX idx_worker_addresses_is_primary (is_primary)
 );
 ```
 
-### patient_contacts
+### worker_contacts
 
 Stores contact information (phone, email, etc.).
 
 ```sql
-CREATE TABLE patient_contacts (
+CREATE TABLE worker_contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     system VARCHAR(20) NOT NULL CHECK (system IN ('phone', 'fax', 'email', 'pager', 'url', 'sms', 'other')),
     value VARCHAR(255) NOT NULL,
     use_type VARCHAR(20) CHECK (use_type IN ('home', 'work', 'temp', 'old', 'mobile')),
@@ -153,22 +153,22 @@ CREATE TABLE patient_contacts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Indexes
-    INDEX idx_patient_contacts_patient_id (patient_id),
-    INDEX idx_patient_contacts_system (system),
-    INDEX idx_patient_contacts_value (value),
-    INDEX idx_patient_contacts_is_primary (is_primary)
+    INDEX idx_worker_contacts_worker_id (worker_id),
+    INDEX idx_worker_contacts_system (system),
+    INDEX idx_worker_contacts_value (value),
+    INDEX idx_worker_contacts_is_primary (is_primary)
 );
 ```
 
-### patient_links
+### worker_links
 
-Links between patient records (duplicates, merges, references).
+Links between worker records (duplicates, merges, references).
 
 ```sql
-CREATE TABLE patient_links (
+CREATE TABLE worker_links (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    other_patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
+    other_worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     link_type VARCHAR(20) NOT NULL CHECK (link_type IN ('replaced_by', 'replaces', 'refer', 'seealso')),
 
     -- Audit fields
@@ -176,15 +176,15 @@ CREATE TABLE patient_links (
     created_by VARCHAR(255),
 
     -- Prevent self-links
-    CHECK (patient_id != other_patient_id),
+    CHECK (worker_id != other_worker_id),
 
     -- Prevent duplicate links
-    UNIQUE(patient_id, other_patient_id, link_type),
+    UNIQUE(worker_id, other_worker_id, link_type),
 
     -- Indexes
-    INDEX idx_patient_links_patient_id (patient_id),
-    INDEX idx_patient_links_other_patient_id (other_patient_id),
-    INDEX idx_patient_links_link_type (link_type)
+    INDEX idx_worker_links_worker_id (worker_id),
+    INDEX idx_worker_links_other_worker_id (other_worker_id),
+    INDEX idx_worker_links_link_type (link_type)
 );
 ```
 
@@ -309,7 +309,7 @@ CREATE TABLE audit_log (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     user_id VARCHAR(255),
     action VARCHAR(50) NOT NULL,  -- CREATE, UPDATE, DELETE, MERGE, LINK, etc.
-    entity_type VARCHAR(50) NOT NULL,  -- patient, organization, etc.
+    entity_type VARCHAR(50) NOT NULL,  -- worker, organization, etc.
     entity_id UUID NOT NULL,
     old_values JSONB,
     new_values JSONB,
@@ -326,15 +326,15 @@ CREATE TABLE audit_log (
 
 ## Matching Tables
 
-### patient_match_scores
+### worker_match_scores
 
-Stores calculated match scores between patient records.
+Stores calculated match scores between worker records.
 
 ```sql
-CREATE TABLE patient_match_scores (
+CREATE TABLE worker_match_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    candidate_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
+    candidate_id UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     total_score DECIMAL(5,4) NOT NULL,  -- 0.0000 to 1.0000
     name_score DECIMAL(5,4),
     birth_date_score DECIMAL(5,4),
@@ -344,13 +344,13 @@ CREATE TABLE patient_match_scores (
     calculated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Prevent self-matching
-    CHECK (patient_id != candidate_id),
+    CHECK (worker_id != candidate_id),
 
     -- Unique constraint
-    UNIQUE(patient_id, candidate_id),
+    UNIQUE(worker_id, candidate_id),
 
     -- Indexes
-    INDEX idx_match_scores_patient_id (patient_id),
+    INDEX idx_match_scores_worker_id (worker_id),
     INDEX idx_match_scores_total_score (total_score DESC),
     INDEX idx_match_scores_calculated_at (calculated_at)
 );
@@ -371,8 +371,9 @@ $$ language 'plpgsql';
 ```
 
 Apply to all tables with updated_at:
+
 ```sql
-CREATE TRIGGER update_patients_updated_at BEFORE UPDATE ON patients
+CREATE TRIGGER update_workers_updated_at BEFORE UPDATE ON workers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_organizations_updated_at BEFORE UPDATE ON organizations
@@ -386,6 +387,7 @@ CREATE TRIGGER update_organizations_updated_at BEFORE UPDATE ON organizations
 ### Indexes
 
 All tables include indexes for:
+
 - Primary keys (automatic)
 - Foreign keys
 - Common search fields (name, birth_date, postal_code)
@@ -394,17 +396,18 @@ All tables include indexes for:
 
 ### Partitioning (Future)
 
-For very large deployments (10M+ patients), consider:
+For very large deployments (10M+ workers), consider:
+
 - Partitioning `audit_log` by timestamp (monthly partitions)
-- Partitioning `patient_match_scores` if storing all calculated scores
+- Partitioning `worker_match_scores` if storing all calculated scores
 
 ### Statistics
 
 ```sql
 -- Update statistics for query planner
-ANALYZE patients;
-ANALYZE patient_names;
-ANALYZE patient_identifiers;
+ANALYZE workers;
+ANALYZE worker_names;
+ANALYZE worker_identifiers;
 ```
 
 ## Security
@@ -414,38 +417,38 @@ ANALYZE patient_identifiers;
 Can be enabled for multi-tenant deployments:
 
 ```sql
-ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
-CREATE POLICY patient_access ON patients
+ALTER TABLE workers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY worker_access ON workers
     FOR ALL
     USING (managing_organization_id = current_setting('app.organization_id')::uuid);
 ```
 
 ## Migration Strategy
 
-1. Create tables in dependency order (organizations before patients)
+1. Create tables in dependency order (organizations before workers)
 2. Add indexes after initial data load for better performance
 3. Enable triggers after bulk data import
 4. Run ANALYZE after significant data changes
 
 ## Data Integrity Rules
 
-1. **Cascading Deletes**: Child records (names, addresses) cascade when patient deleted
+1. **Cascading Deletes**: Child records (names, addresses) cascade when worker deleted
 2. **Referential Integrity**: All foreign keys enforced
 3. **Check Constraints**: Enum values enforced at database level
 4. **Unique Constraints**: Prevent duplicate identifiers
-5. **Soft Deletes**: Never hard delete patients (HIPAA requirement)
+5. **Soft Deletes**: Never hard delete workers (HIPAA requirement)
 
 ## Capacity Planning
 
-Estimated storage for 10 million patients:
+Estimated storage for 10 million workers:
 
-| Table | Rows | Size per Row | Total Size |
-|-------|------|--------------|------------|
-| patients | 10M | 500 bytes | 5 GB |
-| patient_names | 15M | 300 bytes | 4.5 GB |
-| patient_identifiers | 30M | 200 bytes | 6 GB |
-| patient_addresses | 20M | 250 bytes | 5 GB |
-| patient_contacts | 30M | 200 bytes | 6 GB |
-| **Total** | | | **~27 GB** |
+| Table              | Rows | Size per Row | Total Size |
+| ------------------ | ---- | ------------ | ---------- |
+| workers            | 10M  | 500 bytes    | 5 GB       |
+| worker_names       | 15M  | 300 bytes    | 4.5 GB     |
+| worker_identifiers | 30M  | 200 bytes    | 6 GB       |
+| worker_addresses   | 20M  | 250 bytes    | 5 GB       |
+| worker_contacts    | 30M  | 200 bytes    | 6 GB       |
+| **Total**          |      |              | **~27 GB** |
 
 Add 50% for indexes: **~40 GB total**

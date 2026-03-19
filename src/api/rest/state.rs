@@ -1,35 +1,34 @@
 //! Application state for REST API
 
 use std::sync::Arc;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::PgConnection;
+use sea_orm::DatabaseConnection;
 
 use crate::search::SearchEngine;
-use crate::matching::{ProbabilisticMatcher, PatientMatcher};
+use crate::matching::{ProbabilisticMatcher, WorkerMatcher};
 use crate::config::Config;
-use crate::db::{PatientRepository, DieselPatientRepository, AuditLogRepository};
+use crate::db::{WorkerRepository, SeaOrmWorkerRepository, AuditLogRepository};
 use crate::streaming::{EventProducer, InMemoryEventPublisher};
 
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    /// Database connection pool
-    pub db_pool: Pool<ConnectionManager<PgConnection>>,
+    /// Database connection
+    pub db: DatabaseConnection,
 
-    /// Patient repository for database operations
-    pub patient_repository: Arc<dyn PatientRepository>,
+    /// Worker repository for database operations
+    pub worker_repository: Arc<dyn WorkerRepository>,
 
-    /// Event publisher for patient events
+    /// Event publisher for worker events
     pub event_publisher: Arc<dyn EventProducer>,
 
     /// Audit log repository
     pub audit_log: Arc<AuditLogRepository>,
 
-    /// Search engine for patient lookups
+    /// Search engine for worker lookups
     pub search_engine: Arc<SearchEngine>,
 
-    /// Patient matcher for finding duplicates
-    pub matcher: Arc<dyn PatientMatcher>,
+    /// Worker matcher for finding duplicates
+    pub matcher: Arc<dyn WorkerMatcher>,
 
     /// Application configuration
     pub config: Arc<Config>,
@@ -38,7 +37,7 @@ pub struct AppState {
 impl AppState {
     /// Create a new application state
     pub fn new(
-        db_pool: Pool<ConnectionManager<PgConnection>>,
+        db: DatabaseConnection,
         search_engine: SearchEngine,
         matcher: ProbabilisticMatcher,
         config: Config,
@@ -47,24 +46,24 @@ impl AppState {
         let event_publisher = Arc::new(InMemoryEventPublisher::new()) as Arc<dyn EventProducer>;
 
         // Create audit log repository
-        let audit_log = Arc::new(AuditLogRepository::new(db_pool.clone()));
+        let audit_log = Arc::new(AuditLogRepository::new(db.clone()));
 
-        // Create patient repository with event publisher and audit log
-        let patient_repository = Arc::new(
-            DieselPatientRepository::new(db_pool.clone())
+        // Create worker repository with event publisher and audit log
+        let worker_repository = Arc::new(
+            SeaOrmWorkerRepository::new(db.clone())
                 .with_event_publisher(event_publisher.clone())
                 .with_audit_log(audit_log.clone())
-        ) as Arc<dyn PatientRepository>;
+        ) as Arc<dyn WorkerRepository>;
 
-        let patient_matcher = Arc::new(matcher) as Arc<dyn PatientMatcher>;
+        let worker_matcher = Arc::new(matcher) as Arc<dyn WorkerMatcher>;
 
         Self {
-            db_pool,
-            patient_repository,
+            db,
+            worker_repository,
             event_publisher,
             audit_log,
             search_engine: Arc::new(search_engine),
-            matcher: patient_matcher,
+            matcher: worker_matcher,
             config: Arc::new(config),
         }
     }

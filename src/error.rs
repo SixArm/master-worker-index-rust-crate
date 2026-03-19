@@ -5,11 +5,11 @@ use thiserror::Error;
 /// Result type alias for MPI operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Error types for the Master Patient Index system
+/// Error types for the Master Worker Index system
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Database error: {0}")]
-    Database(#[from] diesel::result::Error),
+    Database(#[from] sea_orm::DbErr),
 
     #[error("Connection pool error: {0}")]
     Pool(String),
@@ -17,8 +17,8 @@ pub enum Error {
     #[error("Search error: {0}")]
     Search(String),
 
-    #[error("Patient not found: {0}")]
-    PatientNotFound(String),
+    #[error("Worker not found: {0}")]
+    WorkerNotFound(String),
 
     #[error("Validation error: {0}")]
     Validation(String),
@@ -45,7 +45,7 @@ pub enum Error {
 impl Error {
     /// Create a new database error
     pub fn database(msg: impl Into<String>) -> Self {
-        Error::Database(diesel::result::Error::NotFound)
+        Error::Database(sea_orm::DbErr::Custom(msg.into()))
     }
 
     /// Create a new validation error

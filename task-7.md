@@ -2,16 +2,16 @@
 
 ## Overview
 
-This phase implements complete database persistence for the Master Patient Index using Diesel ORM with PostgreSQL. The implementation includes a full repository pattern with bidirectional conversion between domain models and database entities, transaction support, and integration with both REST and FHIR APIs.
+This phase implements complete database persistence for the Master Worker Index using Diesel ORM with PostgreSQL. The implementation includes a full repository pattern with bidirectional conversion between domain models and database entities, transaction support, and integration with both REST and FHIR APIs.
 
 ## Task Description
 
-Integrate the existing Diesel-based database schema with API handlers to enable full CRUD operations on patient records. This includes implementing the repository pattern, creating conversion functions between domain and database models, and connecting all API endpoints to use the database for persistence.
+Integrate the existing Diesel-based database schema with API handlers to enable full CRUD operations on worker records. This includes implementing the repository pattern, creating conversion functions between domain and database models, and connecting all API endpoints to use the database for persistence.
 
 ## Primary Goals
 
-1. **Implement PatientRepository**: Create a production-ready repository implementation using Diesel ORM
-2. **Bidirectional Model Conversion**: Convert between domain `Patient` models and database entities
+1. **Implement WorkerRepository**: Create a production-ready repository implementation using Diesel ORM
+2. **Bidirectional Model Conversion**: Convert between domain `Worker` models and database entities
 3. **API Integration**: Connect REST and FHIR handlers to use the repository
 4. **Transaction Support**: Ensure complex multi-table operations are atomic
 5. **Maintain Test Coverage**: All existing tests must continue passing
@@ -29,19 +29,20 @@ Integrate the existing Diesel-based database schema with API handlers to enable 
 
 1. **Data Persistence**: Transform the MPI from in-memory prototype to production-ready system
 2. **ACID Guarantees**: Leverage PostgreSQL transactions for data consistency
-3. **Scalability**: Database-backed storage supports millions of patient records
+3. **Scalability**: Database-backed storage supports millions of worker records
 4. **Multi-User Support**: Enable concurrent access with proper isolation
 5. **Audit Trail**: Track created_at, updated_at, deleted_at timestamps
-6. **Relationship Management**: Efficiently handle patient names, identifiers, addresses, contacts, and links
+6. **Relationship Management**: Efficiently handle worker names, identifiers, addresses, contacts, and links
 
 ### Healthcare Context
 
-In healthcare systems, patient data must be:
-- **Durable**: Never lose patient records
+In healthcare systems, worker data must be:
+
+- **Durable**: Never lose worker records
 - **Consistent**: All related data (names, identifiers, addresses) stay synchronized
 - **Auditable**: Track when records were created, modified, or deleted
 - **Recoverable**: Database backups enable disaster recovery
-- **Queryable**: Support complex searches across patient demographics
+- **Queryable**: Support complex searches across worker demographics
 
 ## Implementation Details
 
@@ -49,29 +50,30 @@ In healthcare systems, patient data must be:
 
 **File**: `src/db/repositories.rs` (566 lines)
 
-#### PatientRepository Trait
+#### WorkerRepository Trait
 
 ```rust
-pub trait PatientRepository: Send + Sync {
-    fn create(&self, patient: &Patient) -> Result<Patient>;
-    fn get_by_id(&self, id: &Uuid) -> Result<Option<Patient>>;
-    fn update(&self, patient: &Patient) -> Result<Patient>;
+pub trait WorkerRepository: Send + Sync {
+    fn create(&self, worker: &Worker) -> Result<Worker>;
+    fn get_by_id(&self, id: &Uuid) -> Result<Option<Worker>>;
+    fn update(&self, worker: &Worker) -> Result<Worker>;
     fn delete(&self, id: &Uuid) -> Result<()>;
-    fn search(&self, query: &str) -> Result<Vec<Patient>>;
-    fn list_active(&self, limit: i64, offset: i64) -> Result<Vec<Patient>>;
+    fn search(&self, query: &str) -> Result<Vec<Worker>>;
+    fn list_active(&self, limit: i64, offset: i64) -> Result<Vec<Worker>>;
 }
 ```
 
 **Key Design Decisions:**
+
 - `Send + Sync` bounds enable thread-safe usage in async context
 - Returns `Result<T>` for consistent error handling
-- `get_by_id` returns `Option<Patient>` to distinguish not found from errors
+- `get_by_id` returns `Option<Worker>` to distinguish not found from errors
 - `delete` performs soft delete (sets deleted_at timestamp)
 
-#### DieselPatientRepository
+#### DieselWorkerRepository
 
 ```rust
-pub struct DieselPatientRepository {
+pub struct DieselWorkerRepository {
     pool: Pool<ConnectionManager<PgConnection>>,
 }
 ```
@@ -79,124 +81,131 @@ pub struct DieselPatientRepository {
 **Implementation Highlights:**
 
 **Create Operation** (lines 311-367):
+
 ```rust
-fn create(&self, patient: &Patient) -> Result<Patient> {
+fn create(&self, worker: &Worker) -> Result<Worker> {
     let mut conn = self.get_conn()?;
 
     conn.transaction(|conn| {
         // Convert domain model to DB models
-        let (new_patient, new_names, new_identifiers,
-             new_addresses, new_contacts, new_links) = self.to_db_models(patient);
+        let (new_worker, new_names, new_identifiers,
+             new_addresses, new_contacts, new_links) = self.to_db_models(worker);
 
-        // Insert patient
-        let db_patient: DbPatient = diesel::insert_into(patients::table)
-            .values(&new_patient)
+        // Insert worker
+        let db_worker: DbWorker = diesel::insert_into(workers::table)
+            .values(&new_worker)
             .get_result(conn)?;
 
         // Insert all related entities
-        let db_names: Vec<DbPatientName> =
-            diesel::insert_into(patient_names::table)
+        let db_names: Vec<DbWorkerName> =
+            diesel::insert_into(worker_names::table)
                 .values(&new_names)
                 .get_results(conn)?;
 
         // ... insert identifiers, addresses, contacts, links
 
         // Convert back to domain model
-        self.from_db_models(db_patient, db_names, db_identifiers,
+        self.from_db_models(db_worker, db_names, db_identifiers,
                            db_addresses, db_contacts, db_links)
     })
 }
 ```
 
 **Benefits:**
+
 - Single transaction ensures atomicity
 - All related data inserted together
 - Returns fully hydrated domain model
 - Automatic rollback on any error
 
 **Read Operation** (lines 369-407):
+
 ```rust
-fn get_by_id(&self, id: &Uuid) -> Result<Option<Patient>> {
+fn get_by_id(&self, id: &Uuid) -> Result<Option<Worker>> {
     let mut conn = self.get_conn()?;
 
-    // Get patient (respecting soft delete)
-    let db_patient: Option<DbPatient> = patients::table
-        .filter(patients::id.eq(id))
-        .filter(patients::deleted_at.is_null())
+    // Get worker (respecting soft delete)
+    let db_worker: Option<DbWorker> = workers::table
+        .filter(workers::id.eq(id))
+        .filter(workers::deleted_at.is_null())
         .first(&mut conn)
         .optional()?;
 
-    let db_patient = match db_patient {
+    let db_worker = match db_worker {
         Some(p) => p,
         None => return Ok(None),
     };
 
     // Load all related entities
-    let db_names: Vec<DbPatientName> = patient_names::table
-        .filter(patient_names::patient_id.eq(id))
+    let db_names: Vec<DbWorkerName> = worker_names::table
+        .filter(worker_names::worker_id.eq(id))
         .load(&mut conn)?;
 
     // ... load identifiers, addresses, contacts, links
 
-    self.from_db_models(db_patient, db_names, db_identifiers,
+    self.from_db_models(db_worker, db_names, db_identifiers,
                        db_addresses, db_contacts, db_links)
         .map(Some)
 }
 ```
 
 **Benefits:**
+
 - Filters out soft-deleted records
 - Efficient joins via foreign keys
-- Returns fully populated Patient with all relationships
+- Returns fully populated Worker with all relationships
 
 **Update Operation** (lines 409-482):
+
 ```rust
-fn update(&self, patient: &Patient) -> Result<Patient> {
+fn update(&self, worker: &Worker) -> Result<Worker> {
     let mut conn = self.get_conn()?;
 
     conn.transaction(|conn| {
-        // Update patient base record
-        diesel::update(patients::table.filter(patients::id.eq(patient.id)))
-            .set(&update_patient)
+        // Update worker base record
+        diesel::update(workers::table.filter(workers::id.eq(worker.id)))
+            .set(&update_worker)
             .execute(conn)?;
 
         // Delete existing related data
-        diesel::delete(patient_names::table
-            .filter(patient_names::patient_id.eq(patient.id)))
+        diesel::delete(worker_names::table
+            .filter(worker_names::worker_id.eq(worker.id)))
             .execute(conn)?;
 
         // ... delete identifiers, addresses, contacts, links
 
         // Re-insert updated related data
-        diesel::insert_into(patient_names::table)
+        diesel::insert_into(worker_names::table)
             .values(&new_names)
             .execute(conn)?;
 
         // ... re-insert other relationships
 
-        // Fetch and return updated patient
-        self.get_by_id(&patient.id)?
+        // Fetch and return updated worker
+        self.get_by_id(&worker.id)?
             .ok_or_else(|| crate::Error::Validation(
-                "Patient not found after update".to_string()))
+                "Worker not found after update".to_string()))
     })
 }
 ```
 
 **Benefits:**
+
 - Delete + re-insert pattern simplifies logic
 - Transaction ensures consistency
 - Returns fresh data from database
 
 **Delete Operation** (lines 484-496):
+
 ```rust
 fn delete(&self, id: &Uuid) -> Result<()> {
     let mut conn = self.get_conn()?;
 
     // Soft delete
-    diesel::update(patients::table.filter(patients::id.eq(id)))
+    diesel::update(workers::table.filter(workers::id.eq(id)))
         .set((
-            patients::deleted_at.eq(Some(Utc::now())),
-            patients::deleted_by.eq(Some("system".to_string())),
+            workers::deleted_at.eq(Some(Utc::now())),
+            workers::deleted_by.eq(Some("system".to_string())),
         ))
         .execute(&mut conn)?;
 
@@ -205,6 +214,7 @@ fn delete(&self, id: &Uuid) -> Result<()> {
 ```
 
 **Benefits:**
+
 - Preserves data for audit/recovery
 - Simple flag check in queries
 - Can be extended with user context
@@ -214,44 +224,44 @@ fn delete(&self, id: &Uuid) -> Result<()> {
 #### Domain → Database (lines 51-130)
 
 ```rust
-fn to_db_models(&self, patient: &Patient) -> (
-    NewDbPatient,
-    Vec<NewDbPatientName>,
-    Vec<NewDbPatientIdentifier>,
-    Vec<NewDbPatientAddress>,
-    Vec<NewDbPatientContact>,
-    Vec<NewDbPatientLink>
+fn to_db_models(&self, worker: &Worker) -> (
+    NewDbWorker,
+    Vec<NewDbWorkerName>,
+    Vec<NewDbWorkerIdentifier>,
+    Vec<NewDbWorkerAddress>,
+    Vec<NewDbWorkerContact>,
+    Vec<NewDbWorkerLink>
 ) {
-    // Convert patient
-    let new_patient = NewDbPatient {
-        id: Some(patient.id),
-        active: patient.active,
-        gender: format!("{:?}", patient.gender), // Enum → String
-        birth_date: patient.birth_date,
-        deceased: patient.deceased,
-        deceased_datetime: patient.deceased_datetime,
-        marital_status: patient.marital_status.clone(),
-        multiple_birth: patient.multiple_birth,
-        managing_organization_id: patient.managing_organization,
+    // Convert worker
+    let new_worker = NewDbWorker {
+        id: Some(worker.id),
+        active: worker.active,
+        gender: format!("{:?}", worker.gender), // Enum → String
+        birth_date: worker.birth_date,
+        deceased: worker.deceased,
+        deceased_datetime: worker.deceased_datetime,
+        marital_status: worker.marital_status.clone(),
+        multiple_birth: worker.multiple_birth,
+        managing_organization_id: worker.managing_organization,
         created_by: None,
     };
 
     // Primary name
-    let mut names = vec![NewDbPatientName {
-        patient_id: patient.id,
-        use_type: patient.name.use_type.as_ref()
+    let mut names = vec![NewDbWorkerName {
+        worker_id: worker.id,
+        use_type: worker.name.use_type.as_ref()
             .map(|u| format!("{:?}", u)),
-        family: patient.name.family.clone(),
-        given: patient.name.given.clone(),
-        prefix: patient.name.prefix.clone(),
-        suffix: patient.name.suffix.clone(),
+        family: worker.name.family.clone(),
+        given: worker.name.given.clone(),
+        prefix: worker.name.prefix.clone(),
+        suffix: worker.name.suffix.clone(),
         is_primary: true,
     }];
 
     // Additional names
-    for add_name in &patient.additional_names {
-        names.push(NewDbPatientName {
-            patient_id: patient.id,
+    for add_name in &worker.additional_names {
+        names.push(NewDbWorkerName {
+            worker_id: worker.id,
             // ... similar mapping
             is_primary: false,
         });
@@ -259,11 +269,12 @@ fn to_db_models(&self, patient: &Patient) -> (
 
     // Map identifiers, addresses, contacts, links...
 
-    (new_patient, names, identifiers, addresses, contacts, links)
+    (new_worker, names, identifiers, addresses, contacts, links)
 }
 ```
 
 **Conversion Patterns:**
+
 - Enums → Strings via `format!("{:?}", enum)`
 - Arrays/Vecs preserved directly (PostgreSQL array support)
 - UUIDs used for all foreign keys
@@ -275,15 +286,15 @@ fn to_db_models(&self, patient: &Patient) -> (
 ```rust
 fn from_db_models(
     &self,
-    db_patient: DbPatient,
-    db_names: Vec<DbPatientName>,
-    db_identifiers: Vec<DbPatientIdentifier>,
-    db_addresses: Vec<DbPatientAddress>,
-    db_contacts: Vec<DbPatientContact>,
-    db_links: Vec<DbPatientLink>,
-) -> Result<Patient> {
+    db_worker: DbWorker,
+    db_names: Vec<DbWorkerName>,
+    db_identifiers: Vec<DbWorkerIdentifier>,
+    db_addresses: Vec<DbWorkerAddress>,
+    db_contacts: Vec<DbWorkerContact>,
+    db_links: Vec<DbWorkerLink>,
+) -> Result<Worker> {
     // Parse gender
-    let gender = match db_patient.gender.as_str() {
+    let gender = match db_worker.gender.as_str() {
         "Male" => Gender::Male,
         "Female" => Gender::Female,
         "Other" => Gender::Other,
@@ -294,7 +305,7 @@ fn from_db_models(
     let primary_name = db_names.iter()
         .find(|n| n.is_primary)
         .ok_or_else(|| crate::Error::Validation(
-            "Patient has no primary name".to_string()))?;
+            "Worker has no primary name".to_string()))?;
 
     let name = HumanName {
         use_type: primary_name.use_type.as_ref()
@@ -312,30 +323,31 @@ fn from_db_models(
 
     // Parse additional names, identifiers, addresses, contacts, links...
 
-    Ok(Patient {
-        id: db_patient.id,
+    Ok(Worker {
+        id: db_worker.id,
         identifiers,
-        active: db_patient.active,
+        active: db_worker.active,
         name,
         additional_names,
         telecom,
         gender,
-        birth_date: db_patient.birth_date,
-        deceased: db_patient.deceased,
-        deceased_datetime: db_patient.deceased_datetime,
+        birth_date: db_worker.birth_date,
+        deceased: db_worker.deceased,
+        deceased_datetime: db_worker.deceased_datetime,
         addresses,
-        marital_status: db_patient.marital_status,
-        multiple_birth: db_patient.multiple_birth,
+        marital_status: db_worker.marital_status,
+        multiple_birth: db_worker.multiple_birth,
         photo: vec![],
-        managing_organization: db_patient.managing_organization_id,
+        managing_organization: db_worker.managing_organization_id,
         links,
-        created_at: db_patient.created_at,
-        updated_at: db_patient.updated_at,
+        created_at: db_worker.created_at,
+        updated_at: db_worker.updated_at,
     })
 }
 ```
 
 **Conversion Patterns:**
+
 - Strings → Enums via pattern matching
 - Default/fallback values for unknown variants
 - `filter_map` for optional conversions
@@ -347,6 +359,7 @@ fn from_db_models(
 **File**: `src/api/rest/state.rs`
 
 **Before:**
+
 ```rust
 pub struct AppState {
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
@@ -357,12 +370,13 @@ pub struct AppState {
 ```
 
 **After:**
+
 ```rust
 pub struct AppState {
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
-    pub patient_repository: Arc<dyn PatientRepository>,  // NEW
+    pub worker_repository: Arc<dyn WorkerRepository>,  // NEW
     pub search_engine: Arc<SearchEngine>,
-    pub matcher: Arc<dyn PatientMatcher>,  // Changed to trait object
+    pub matcher: Arc<dyn WorkerMatcher>,  // Changed to trait object
     pub config: Arc<Config>,
 }
 
@@ -373,18 +387,18 @@ impl AppState {
         matcher: ProbabilisticMatcher,
         config: Config,
     ) -> Self {
-        let patient_repository = Arc::new(
-            DieselPatientRepository::new(db_pool.clone())
-        ) as Arc<dyn PatientRepository>;
+        let worker_repository = Arc::new(
+            DieselWorkerRepository::new(db_pool.clone())
+        ) as Arc<dyn WorkerRepository>;
 
-        let patient_matcher = Arc::new(matcher)
-            as Arc<dyn PatientMatcher>;
+        let worker_matcher = Arc::new(matcher)
+            as Arc<dyn WorkerMatcher>;
 
         Self {
             db_pool,
-            patient_repository,
+            worker_repository,
             search_engine: Arc::new(search_engine),
-            matcher: patient_matcher,
+            matcher: worker_matcher,
             config: Arc::new(config),
         }
     }
@@ -392,7 +406,8 @@ impl AppState {
 ```
 
 **Key Changes:**
-- Added `patient_repository` field with trait object
+
+- Added `worker_repository` field with trait object
 - Changed `matcher` to trait object for consistency
 - Repository auto-created from pool in constructor
 - `Send + Sync` bounds on traits enable `Arc` sharing
@@ -401,13 +416,14 @@ impl AppState {
 
 **File**: `src/api/rest/handlers.rs`
 
-#### Create Patient (lines 44-73)
+#### Create Worker (lines 44-73)
 
 **Before:**
+
 ```rust
-pub async fn create_patient(
+pub async fn create_worker(
     State(_state): State<AppState>,
-    Json(payload): Json<Patient>,
+    Json(payload): Json<Worker>,
 ) -> impl IntoResponse {
     // TODO: Actually insert into database
     (StatusCode::CREATED, Json(ApiResponse::success(payload)))
@@ -415,30 +431,31 @@ pub async fn create_patient(
 ```
 
 **After:**
+
 ```rust
-pub async fn create_patient(
+pub async fn create_worker(
     State(state): State<AppState>,
-    Json(mut payload): Json<Patient>,
+    Json(mut payload): Json<Worker>,
 ) -> impl IntoResponse {
-    // Ensure patient has a UUID
+    // Ensure worker has a UUID
     if payload.id == Uuid::nil() {
         payload.id = Uuid::new_v4();
     }
 
     // Insert into database
-    match state.patient_repository.create(&payload) {
-        Ok(patient) => {
+    match state.worker_repository.create(&payload) {
+        Ok(worker) => {
             // Index in search engine
-            if let Err(e) = state.search_engine.index_patient(&patient) {
-                tracing::warn!("Failed to index patient: {}", e);
+            if let Err(e) = state.search_engine.index_worker(&worker) {
+                tracing::warn!("Failed to index worker: {}", e);
             }
 
-            (StatusCode::CREATED, Json(ApiResponse::success(patient)))
+            (StatusCode::CREATED, Json(ApiResponse::success(worker)))
         }
         Err(e) => {
-            let error = ApiResponse::<Patient>::error(
+            let error = ApiResponse::<Worker>::error(
                 "DATABASE_ERROR",
-                format!("Failed to create patient: {}", e)
+                format!("Failed to create worker: {}", e)
             );
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error))
         }
@@ -447,35 +464,37 @@ pub async fn create_patient(
 ```
 
 **Improvements:**
+
 - Generates UUID if not provided
 - Persists to database via repository
 - Automatically indexes in search engine
 - Proper error handling with user-friendly messages
 - Returns database-confirmed data
 
-#### Get Patient (lines 76-99)
+#### Get Worker (lines 76-99)
 
 **After:**
+
 ```rust
-pub async fn get_patient(
+pub async fn get_worker(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.patient_repository.get_by_id(&id) {
-        Ok(Some(patient)) => {
-            (StatusCode::OK, Json(ApiResponse::success(patient)))
+    match state.worker_repository.get_by_id(&id) {
+        Ok(Some(worker)) => {
+            (StatusCode::OK, Json(ApiResponse::success(worker)))
         }
         Ok(None) => {
-            let error = ApiResponse::<Patient>::error(
+            let error = ApiResponse::<Worker>::error(
                 "NOT_FOUND",
-                format!("Patient with id '{}' not found", id)
+                format!("Worker with id '{}' not found", id)
             );
             (StatusCode::NOT_FOUND, Json(error))
         }
         Err(e) => {
-            let error = ApiResponse::<Patient>::error(
+            let error = ApiResponse::<Worker>::error(
                 "DATABASE_ERROR",
-                format!("Failed to retrieve patient: {}", e)
+                format!("Failed to retrieve worker: {}", e)
             );
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error))
         }
@@ -484,42 +503,44 @@ pub async fn get_patient(
 ```
 
 **Improvements:**
+
 - Fetches from database instead of returning NOT_IMPLEMENTED
 - Distinguishes not found (404) from database errors (500)
-- Returns fully hydrated patient with all relationships
+- Returns fully hydrated worker with all relationships
 
-#### Search Patients (lines 180-225)
+#### Search Workers (lines 180-225)
 
 **After:**
+
 ```rust
-match patient_ids {
+match worker_ids {
     Ok(ids) => {
-        // Fetch full patient records from database
-        let mut patients = Vec::new();
-        for patient_id_str in ids {
+        // Fetch full worker records from database
+        let mut workers = Vec::new();
+        for worker_id_str in ids {
             // Parse string ID to UUID
-            let patient_id = match Uuid::parse_str(&patient_id_str) {
+            let worker_id = match Uuid::parse_str(&worker_id_str) {
                 Ok(id) => id,
                 Err(e) => {
-                    tracing::error!("Failed to parse ID {}: {}", patient_id_str, e);
+                    tracing::error!("Failed to parse ID {}: {}", worker_id_str, e);
                     continue;
                 }
             };
 
-            match state.patient_repository.get_by_id(&patient_id) {
-                Ok(Some(patient)) => patients.push(patient),
+            match state.worker_repository.get_by_id(&worker_id) {
+                Ok(Some(worker)) => workers.push(worker),
                 Ok(None) => {
-                    tracing::warn!("Patient {} in index but not in DB", patient_id);
+                    tracing::warn!("Worker {} in index but not in DB", worker_id);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to fetch patient: {}", e);
+                    tracing::error!("Failed to fetch worker: {}", e);
                 }
             }
         }
 
         let response = SearchResponse {
-            total: patients.len(),
-            patients,
+            total: workers.len(),
+            workers,
             query: params.q,
         };
         (StatusCode::OK, Json(ApiResponse::success(response)))
@@ -529,19 +550,21 @@ match patient_ids {
 ```
 
 **Improvements:**
+
 - Hydrates search results from database
 - UUID parsing with error handling
 - Graceful handling of index/DB inconsistencies
-- Returns full patient records, not just IDs
+- Returns full worker records, not just IDs
 
-#### Match Patient (lines 260-358)
+#### Match Worker (lines 260-358)
 
 **After:**
+
 ```rust
-// Fetch candidate patients from database
+// Fetch candidate workers from database
 let mut candidates = Vec::new();
-for patient_id_str in ids {
-    let patient_id = match Uuid::parse_str(&patient_id_str) {
+for worker_id_str in ids {
+    let worker_id = match Uuid::parse_str(&worker_id_str) {
         Ok(id) => id,
         Err(e) => {
             tracing::error!("Failed to parse ID: {}", e);
@@ -549,14 +572,14 @@ for patient_id_str in ids {
         }
     };
 
-    match state.patient_repository.get_by_id(&patient_id) {
-        Ok(Some(patient)) => candidates.push(patient),
+    match state.worker_repository.get_by_id(&worker_id) {
+        Ok(Some(worker)) => candidates.push(worker),
         // ... error handling
     }
 }
 
 // Run matcher on candidates
-let match_results = match state.matcher.find_matches(&payload.patient, &candidates) {
+let match_results = match state.matcher.find_matches(&payload.worker, &candidates) {
     Ok(results) => results,
     Err(e) => {
         let error = ApiResponse::<MatchResultsResponse>::error(
@@ -578,7 +601,7 @@ let matches: Vec<MatchResponse> = match_results.into_iter()
                      else { "possible" };
 
         MatchResponse {
-            patient: m.patient.clone(),
+            worker: m.worker.clone(),
             score: m.score,
             quality: quality.to_string(),
         }
@@ -587,41 +610,43 @@ let matches: Vec<MatchResponse> = match_results.into_iter()
 ```
 
 **Improvements:**
-- Fetches candidate patients from database
+
+- Fetches candidate workers from database
 - Runs probabilistic matching on real data
 - Threshold filtering
 - Quality classification (certain/probable/possible)
-- Returns scored matches with full patient details
+- Returns scored matches with full worker details
 
 ### 5. FHIR API Handler Updates
 
 **File**: `src/api/fhir/handlers.rs`
 
-#### Create FHIR Patient (lines 69-103)
+#### Create FHIR Worker (lines 69-103)
 
 **After:**
+
 ```rust
-pub async fn create_fhir_patient(
+pub async fn create_fhir_worker(
     State(state): State<AppState>,
-    Json(fhir_patient): Json<FhirPatient>,
+    Json(fhir_worker): Json<FhirWorker>,
 ) -> impl IntoResponse {
     // Convert FHIR to internal model
-    match from_fhir_patient(&fhir_patient) {
-        Ok(mut patient) => {
+    match from_fhir_worker(&fhir_worker) {
+        Ok(mut worker) => {
             // Ensure UUID
-            if patient.id == Uuid::nil() {
-                patient.id = Uuid::new_v4();
+            if worker.id == Uuid::nil() {
+                worker.id = Uuid::new_v4();
             }
 
             // Insert into database
-            match state.patient_repository.create(&patient) {
-                Ok(created_patient) => {
+            match state.worker_repository.create(&worker) {
+                Ok(created_worker) => {
                     // Index in search engine
-                    if let Err(e) = state.search_engine.index_patient(&created_patient) {
+                    if let Err(e) = state.search_engine.index_worker(&created_worker) {
                         tracing::warn!("Failed to index: {}", e);
                     }
 
-                    let fhir_response = to_fhir_patient(&created_patient);
+                    let fhir_response = to_fhir_worker(&created_worker);
                     (StatusCode::CREATED, Json(serde_json::to_value(fhir_response).unwrap()))
                 }
                 Err(e) => {
@@ -639,21 +664,23 @@ pub async fn create_fhir_patient(
 ```
 
 **Improvements:**
+
 - Full FHIR → domain → database → FHIR roundtrip
 - Database persistence with automatic UUID generation
 - Search engine indexing
 - FHIR OperationOutcome for errors
 
-#### Search FHIR Patients (lines 178-213)
+#### Search FHIR Workers (lines 178-213)
 
 **After:**
+
 ```rust
 match state.search_engine.search(&search_query, limit) {
-    Ok(patient_ids) => {
-        // Fetch patients and convert to FHIR
+    Ok(worker_ids) => {
+        // Fetch workers and convert to FHIR
         let mut fhir_entries = Vec::new();
-        for patient_id_str in &patient_ids {
-            let patient_id = match Uuid::parse_str(patient_id_str) {
+        for worker_id_str in &worker_ids {
+            let worker_id = match Uuid::parse_str(worker_id_str) {
                 Ok(id) => id,
                 Err(e) => {
                     tracing::error!("Failed to parse ID: {}", e);
@@ -661,12 +688,12 @@ match state.search_engine.search(&search_query, limit) {
                 }
             };
 
-            match state.patient_repository.get_by_id(&patient_id) {
-                Ok(Some(patient)) => {
-                    let fhir_patient = to_fhir_patient(&patient);
+            match state.worker_repository.get_by_id(&worker_id) {
+                Ok(Some(worker)) => {
+                    let fhir_worker = to_fhir_worker(&worker);
                     fhir_entries.push(serde_json::json!({
-                        "fullUrl": format!("Patient/{}", patient.id),
-                        "resource": fhir_patient
+                        "fullUrl": format!("Worker/{}", worker.id),
+                        "resource": fhir_worker
                     }));
                 }
                 // ... error handling
@@ -686,8 +713,9 @@ match state.search_engine.search(&search_query, limit) {
 ```
 
 **Improvements:**
+
 - Returns proper FHIR Bundle searchset
-- Hydrates full patient records from database
+- Hydrates full worker records from database
 - Includes fullUrl for each entry
 - FHIR-compliant response structure
 
@@ -695,7 +723,7 @@ match state.search_engine.search(&search_query, limit) {
 
 ### Tables Used
 
-1. **patients** - Core patient demographics
+1. **workers** - Core worker demographics
    - id (UUID, PK)
    - active (boolean)
    - gender (varchar)
@@ -710,9 +738,9 @@ match state.search_engine.search(&search_query, limit) {
    - deleted_at (timestamptz, nullable) - soft delete
    - deleted_by (varchar, nullable)
 
-2. **patient_names** - Primary and additional names
+2. **worker_names** - Primary and additional names
    - id (UUID, PK)
-   - patient_id (UUID, FK)
+   - worker_id (UUID, FK)
    - use_type (varchar, nullable) - "Usual", "Official", etc.
    - family (varchar)
    - given (text array)
@@ -721,9 +749,9 @@ match state.search_engine.search(&search_query, limit) {
    - is_primary (boolean)
    - created_at, updated_at (timestamptz)
 
-3. **patient_identifiers** - MRN, SSN, etc.
+3. **worker_identifiers** - MRN, SSN, etc.
    - id (UUID, PK)
-   - patient_id (UUID, FK)
+   - worker_id (UUID, FK)
    - use_type (varchar, nullable)
    - identifier_type (varchar) - "MRN", "SSN", "DL", "NPI", "PPN", "TAX"
    - system (varchar) - issuing authority
@@ -731,28 +759,28 @@ match state.search_engine.search(&search_query, limit) {
    - assigner (varchar, nullable)
    - created_at, updated_at (timestamptz)
 
-4. **patient_addresses** - Physical addresses
+4. **worker_addresses** - Physical addresses
    - id (UUID, PK)
-   - patient_id (UUID, FK)
+   - worker_id (UUID, FK)
    - use_type (varchar, nullable)
    - line1, line2 (varchar, nullable)
    - city, state, postal_code, country (varchar, nullable)
    - is_primary (boolean)
    - created_at, updated_at (timestamptz)
 
-5. **patient_contacts** - Phone, email, etc.
+5. **worker_contacts** - Phone, email, etc.
    - id (UUID, PK)
-   - patient_id (UUID, FK)
+   - worker_id (UUID, FK)
    - system (varchar) - "Phone", "Email", "Fax", etc.
    - value (varchar)
    - use_type (varchar, nullable) - "Home", "Work", "Mobile"
    - is_primary (boolean)
    - created_at, updated_at (timestamptz)
 
-6. **patient_links** - Relationships between patient records
+6. **worker_links** - Relationships between worker records
    - id (UUID, PK)
-   - patient_id (UUID, FK)
-   - other_patient_id (UUID, FK)
+   - worker_id (UUID, FK)
+   - other_worker_id (UUID, FK)
    - link_type (varchar) - "ReplacedBy", "Replaces", "Refer", "Seealso"
    - created_at (timestamptz)
    - created_by (varchar, nullable)
@@ -786,17 +814,19 @@ pub enum Error {
 ### Handler Error Responses
 
 **REST API:**
+
 ```rust
 Err(e) => {
-    let error = ApiResponse::<Patient>::error(
+    let error = ApiResponse::<Worker>::error(
         "DATABASE_ERROR",
-        format!("Failed to create patient: {}", e)
+        format!("Failed to create worker: {}", e)
     );
     (StatusCode::INTERNAL_SERVER_ERROR, Json(error))
 }
 ```
 
 **FHIR API:**
+
 ```rust
 Err(e) => {
     let outcome = FhirOperationOutcome::error("database-error", &e.to_string());
@@ -816,7 +846,7 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 - **Matching Tests** (11 tests): Probabilistic and deterministic matching algorithms
 - **Search Tests** (7 tests): Tantivy indexing and search operations
-- **Model Tests** (4 tests): Patient model creation and validation
+- **Model Tests** (4 tests): Worker model creation and validation
 - **Integration Tests** (2 tests): Module imports and schema validation
 
 ### Future Testing Needs
@@ -832,11 +862,13 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ### Current Implementation
 
 1. **Search Implementation**: Uses raw SQL LIKE query instead of full-text search
+
    ```rust
    .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
        &format!("LOWER(family) LIKE '{}'", search_pattern)
    ))
    ```
+
    - **Limitation**: Not SQL injection safe, inefficient for large datasets
    - **TODO**: Migrate to PostgreSQL full-text search or keep Tantivy as source of truth
 
@@ -845,9 +877,11 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
    - **TODO**: Consider differential updates for specific use cases
 
 3. **User Context**: Created_by and updated_by fields use placeholder values
+
    ```rust
    created_by: None, // TODO: Get from context
    ```
+
    - **TODO**: Extract user from authentication context
 
 4. **Pagination**: Limited to `list_active()` method
@@ -881,17 +915,19 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ### N+1 Query Prevention
 
 Current implementation has N+1 pattern:
+
 ```rust
-for patient_id in patient_ids {
-    if let Some(patient) = self.get_by_id(&patient_id)? {
-        patients.push(patient);
+for worker_id in worker_ids {
+    if let Some(worker) = self.get_by_id(&worker_id)? {
+        workers.push(worker);
     }
 }
 ```
 
 **TODO**: Implement batch loading:
+
 ```rust
-fn get_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Patient>> {
+fn get_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Worker>> {
     // Single query with IN clause
     // Load all related entities with fewer queries
 }
@@ -917,7 +953,7 @@ fn get_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Patient>> {
 6. **Backup/Restore**: Point-in-time recovery procedures
 7. **Multi-Tenancy**: Organization-based data isolation
 8. **Read Replicas**: Separate read/write database instances
-9. **Caching Layer**: Redis for frequently accessed patients
+9. **Caching Layer**: Redis for frequently accessed workers
 10. **Metrics**: Database query performance monitoring
 
 ### Optimization Opportunities
@@ -926,14 +962,14 @@ fn get_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Patient>> {
 2. **Connection Pool Tuning**: Optimize min/max based on load testing
 3. **Index Strategy**: Add covering indexes for common queries
 4. **Materialized Views**: For complex aggregate queries
-5. **Partitioning**: Shard patients table by organization or date
+5. **Partitioning**: Shard workers table by organization or date
 
 ## Success Metrics
 
 ### Completion Criteria ✅
 
 - [x] Repository trait defined with Send + Sync
-- [x] DieselPatientRepository implements all CRUD operations
+- [x] DieselWorkerRepository implements all CRUD operations
 - [x] Bidirectional model conversion (domain ↔ database)
 - [x] Transaction support for complex operations
 - [x] Soft delete implementation
@@ -955,25 +991,28 @@ fn get_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Patient>> {
 ## Files Modified/Created
 
 ### Created
+
 - None (used existing database infrastructure)
 
 ### Modified
-1. `src/db/repositories.rs` - Implemented PatientRepository (+545 lines)
+
+1. `src/db/repositories.rs` - Implemented WorkerRepository (+545 lines)
 2. `src/db/mod.rs` - Exported repository types (+2 lines)
-3. `src/api/rest/state.rs` - Added patient_repository field (+7 lines)
+3. `src/api/rest/state.rs` - Added worker_repository field (+7 lines)
 4. `src/api/rest/handlers.rs` - Integrated all handlers with DB (+~150 lines)
 5. `src/api/fhir/handlers.rs` - Integrated all FHIR handlers with DB (+~80 lines)
-6. `src/matching/mod.rs` - Added Send + Sync to PatientMatcher trait (+1 line)
+6. `src/matching/mod.rs` - Added Send + Sync to WorkerMatcher trait (+1 line)
 
 ### Total Impact
+
 - **Lines Added**: ~785 lines
 - **Files Modified**: 6 files
 - **Total Codebase**: 5,152 lines
 
 ## Conclusion
 
-Phase 7 successfully transforms the Master Patient Index from an in-memory prototype to a production-ready system with full database persistence. The implementation leverages Diesel ORM for type-safe database operations, maintains clean separation between domain models and database entities, and integrates seamlessly with both REST and FHIR APIs.
+Phase 7 successfully transforms the Master Worker Index from an in-memory prototype to a production-ready system with full database persistence. The implementation leverages Diesel ORM for type-safe database operations, maintains clean separation between domain models and database entities, and integrates seamlessly with both REST and FHIR APIs.
 
 The repository pattern provides a solid foundation for future enhancements including event streaming, caching layers, read replicas, and advanced query optimization. All existing tests continue passing, demonstrating that the database integration maintains system integrity while adding enterprise-grade persistence capabilities.
 
-**Key Achievement**: The MPI now provides ACID-compliant, auditable, recoverable patient record management suitable for production healthcare environments.
+**Key Achievement**: The MPI now provides ACID-compliant, auditable, recoverable worker record management suitable for production healthcare environments.

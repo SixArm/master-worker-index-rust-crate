@@ -1,9 +1,9 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: mpi-postgres
     restart: unless-stopped
     environment:
@@ -16,14 +16,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mpi_user} -d ${POSTGRES_DB:-mpi}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-mpi_user} -d ${POSTGRES_DB:-mpi}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - mpi-network
 
-  # Master Patient Index application
+  # Master Worker Index application
   mpi-server:
     build:
       context: .
@@ -85,7 +89,7 @@ services:
     networks:
       - mpi-network
     profiles:
-      - tools  # Only start with --profile tools
+      - tools # Only start with --profile tools
 
 volumes:
   postgres_data:
